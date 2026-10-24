@@ -1,3 +1,14 @@
+// Ensure standard test secrets exist when running in headless / CI environments without a .env file
+if (!process.env.JWT_SECRET) {
+  process.env.JWT_SECRET = 'dialpulse-central-crm-test-jwt-secret-key-32chars-min';
+}
+if (!process.env.REFRESH_TOKEN_SECRET) {
+  process.env.REFRESH_TOKEN_SECRET = 'dialpulse-central-crm-test-refresh-secret-32chars-min';
+}
+if (!process.env.NODE_ENV) {
+  process.env.NODE_ENV = 'test';
+}
+
 import { runConfigTests } from './config.test.ts';
 import { runAuthTests } from './auth.test.ts';
 import { runRbacTests } from './rbac.test.ts';

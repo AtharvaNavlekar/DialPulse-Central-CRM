@@ -9,6 +9,10 @@ jobs:
   main-verification:
     name: Canonical Verification & Operational Gate
     runs-on: ubuntu-latest
+    env:
+      NODE_ENV: test
+      JWT_SECRET: dialpulse-central-crm-test-jwt-secret-key-32chars-min
+      REFRESH_TOKEN_SECRET: dialpulse-central-crm-test-refresh-secret-32chars-min
 
     steps:
       - name: 1. Checkout Repository
