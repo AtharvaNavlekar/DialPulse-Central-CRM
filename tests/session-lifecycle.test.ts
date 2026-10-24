@@ -18,6 +18,7 @@ import {
   AuthoritativeDataStore,
   AuthoritativeUserRecord,
   AuthoritativeSessionRecord,
+  SessionRotationResult,
   standaloneDevStore,
 } from '../src/server/auth/authoritative-validator.ts';
 import { hashToken, generateRefreshToken, signAccessToken } from '../src/server/auth/token.ts';
@@ -66,16 +67,24 @@ function makeRequest(
 ): Promise<RequestResponse> {
   return new Promise((resolve, reject) => {
     const addr = server.address() as any;
+    const reqHeaders: Record<string, string> = {
+      'Content-Type': 'application/json',
+      ...headers,
+    };
+
+    // If neither origin nor referer is provided and omitOrigin is not set, simulate standard same-origin browser request
+    if (!('origin' in headers) && !('referer' in headers) && !('omitOrigin' in headers)) {
+      reqHeaders['origin'] = `http://127.0.0.1:${addr.port}`;
+    }
+    delete reqHeaders['omitOrigin'];
+
     const req = http.request(
       {
         host: '127.0.0.1',
         port: addr.port,
         path,
         method,
-        headers: {
-          'Content-Type': 'application/json',
-          ...headers,
-        },
+        headers: reqHeaders,
       },
       (res) => {
         let data = '';
@@ -111,7 +120,8 @@ class MockLifecycleStore implements AuthoritativeDataStore {
     public sessions: Map<string, AuthoritativeSessionRecord> = new Map(),
     public rolePermissions: Map<string, PlatformPermission[]> = new Map(),
     public failDatabase: boolean = false,
-    public failRevocation: boolean = false
+    public failRevocation: boolean = false,
+    public simulatedZeroRowUpdate: boolean = false
   ) {}
 
   async getUserById(id: string): Promise<AuthoritativeUserRecord | null> {
@@ -152,13 +162,21 @@ class MockLifecycleStore implements AuthoritativeDataStore {
     newHash: string,
     oldHash: string,
     newExpiresAt: Date
-  ): Promise<void> {
+  ): Promise<SessionRotationResult> {
     if (this.failDatabase) throw new Error('FATAL: PostgreSQL pool connection error');
+    if (this.simulatedZeroRowUpdate) {
+      return { updated: false };
+    }
     const s = this.sessions.get(sessionId);
-    if (!s) throw new Error('Session not found for rotation');
+    if (!s) return { updated: false };
+    const isUnexpired = new Date(s.expiresAt).getTime() > Date.now();
+    if (s.refreshTokenHash !== oldHash || s.isRevoked || !isUnexpired) {
+      return { updated: false };
+    }
     s.refreshTokenHash = newHash;
     s.previousRefreshTokenHash = oldHash;
     s.expiresAt = newExpiresAt;
+    return { updated: true };
   }
 
   async revokeSession(sessionId: string): Promise<void> {
@@ -688,10 +706,58 @@ export async function runSessionLifecycleTests() {
         });
         // 401 because not authenticated, NOT 403 CSRF rejected!
         assert.strictEqual(resSafeGet.status, 401, 'Safe method GET bypasses CSRF rejection');
+
+        // 10f. Missing Origin AND Referer on unsafe cookie-authenticated requests rejected with 403
+        const resMissingOrigin = await makeRequest(server, '/api/auth/refresh', 'POST', {
+          Cookie: `${COOKIE_NAMES.REFRESH_TOKEN}=dp_rt_arbitrary_test_token`,
+          omitOrigin: 'true',
+        });
+        assert.strictEqual(
+          resMissingOrigin.status,
+          403,
+          'State-changing cookie-authenticated request without Origin or Referer must return 403'
+        );
+        assert.strictEqual(resMissingOrigin.body.error, 'CSRF_MISSING_ORIGIN');
+
+        // 10g. Valid same-origin request is accepted
+        const addr = server.address() as any;
+        const resSameOrigin = await makeRequest(server, '/api/auth/refresh', 'POST', {
+          origin: `http://127.0.0.1:${addr.port}`,
+          Cookie: `${COOKIE_NAMES.REFRESH_TOKEN}=dp_rt_arbitrary_test_token`,
+        });
+        assert.notStrictEqual(
+          resSameOrigin.status,
+          403,
+          'Valid same-origin request must not be rejected by CSRF middleware'
+        );
+
+        // 10h. Malformed Origin is rejected with 403
+        const resMalformedOrigin = await makeRequest(server, '/api/auth/refresh', 'POST', {
+          origin: 'malformed://!invalid-url',
+          Cookie: `${COOKIE_NAMES.REFRESH_TOKEN}=dp_rt_arbitrary_test_token`,
+        });
+        assert.strictEqual(resMalformedOrigin.status, 403);
+        assert.strictEqual(resMalformedOrigin.body.error, 'CSRF_ORIGIN_REJECTED');
+
+        // 10i. Malformed Referer is rejected with 403
+        const resMalformedReferer = await makeRequest(server, '/api/auth/refresh', 'POST', {
+          referer: 'malformed://!invalid-url',
+          omitOrigin: 'true',
+          Cookie: `${COOKIE_NAMES.REFRESH_TOKEN}=dp_rt_arbitrary_test_token`,
+        });
+        assert.strictEqual(resMalformedReferer.status, 403);
+        assert.strictEqual(resMalformedReferer.body.error, 'CSRF_REFERER_REJECTED');
+
+        // 10j. Invalid X-Requested-With header value is rejected with 403
+        const resBadHeader = await makeRequest(server, '/api/auth/refresh', 'POST', {
+          'x-requested-with': 'BadCustomHeaderValue',
+        });
+        assert.strictEqual(resBadHeader.status, 403);
+        assert.strictEqual(resBadHeader.body.error, 'CSRF_HEADER_REJECTED');
       } finally {
         await new Promise<void>((resolve) => server.close(() => resolve()));
       }
-      console.log('  ✓ Criterion 10: CSRF protection blocks cross-site, null origin, and foreign referer');
+      console.log('  ✓ Criterion 10: CSRF protection blocks cross-site, null origin, foreign referer, missing origin, and malformed headers');
     }
 
     // -------------------------------------------------------------------------
@@ -785,6 +851,233 @@ export async function runSessionLifecycleTests() {
       }
       assert.strictEqual(caught, true, 'StandaloneDevDataStore must throw in production');
       console.log('  ✓ Criterion 12: Standalone development store strictly isolated from production');
+    }
+
+    // -------------------------------------------------------------------------
+    // Criterion 13: Concurrency-safe refresh rotation: two concurrent requests cannot both succeed
+    // -------------------------------------------------------------------------
+    {
+      process.env.NODE_ENV = 'development';
+      const store = new MockLifecycleStore();
+      const adminUser: AuthoritativeUserRecord = {
+        id: 'usr_staff_admin_01',
+        email: 'admin@dialpulse.internal',
+        fullName: 'Aarav Patel (Platform Admin)',
+        platformRole: 'platform_admin',
+        isPlatformStaff: true,
+        isActive: true,
+      };
+      store.users.set(adminUser.id, adminUser);
+      store.rolePermissions.set('platform_admin', ['platform:overview:read']);
+
+      const { token: rt1, hash: rt1Hash, expiresAt: rt1ExpiresAt } = generateRefreshToken();
+      const sessionId = 'ses_concurrent_rotation_test';
+      store.sessions.set(sessionId, {
+        id: sessionId,
+        userId: adminUser.id,
+        refreshTokenHash: rt1Hash,
+        previousRefreshTokenHash: null,
+        isRevoked: false,
+        expiresAt: rt1ExpiresAt,
+      });
+
+      const { server } = createLifecycleTestServer(store);
+      await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', () => resolve()));
+
+      try {
+        // Fire 2 simultaneous refresh requests using the exact same old refresh token rt1
+        const [res1, res2] = await Promise.all([
+          makeRequest(server, '/api/auth/refresh', 'POST', {
+            Cookie: `${COOKIE_NAMES.REFRESH_TOKEN}=${rt1}`,
+          }),
+          makeRequest(server, '/api/auth/refresh', 'POST', {
+            Cookie: `${COOKIE_NAMES.REFRESH_TOKEN}=${rt1}`,
+          }),
+        ]);
+
+        const statuses = [res1.status, res2.status].sort();
+        // Exactly one must succeed (200) and the other must fail (401)
+        assert.deepStrictEqual(
+          statuses,
+          [200, 401],
+          'Exactly one concurrent refresh request must succeed and the other must fail'
+        );
+
+        const successfulRes = res1.status === 200 ? res1 : res2;
+        const failedRes = res1.status === 200 ? res2 : res1;
+
+        assert.strictEqual(successfulRes.body.success, true);
+        assert(successfulRes.cookies[COOKIE_NAMES.REFRESH_TOKEN], 'Successful response has new refresh cookie');
+
+        // The failed response must NEVER issue cookies
+        assert(
+          !failedRes.cookies[COOKIE_NAMES.REFRESH_TOKEN] ||
+          failedRes.cookies[COOKIE_NAMES.REFRESH_TOKEN].value === '' ||
+          failedRes.cookies[COOKIE_NAMES.REFRESH_TOKEN].attributes['expires'] !== undefined,
+          'Failed concurrent rotation must never issue active refresh cookies'
+        );
+      } finally {
+        await new Promise<void>((resolve) => server.close(() => resolve()));
+      }
+      console.log('  ✓ Criterion 13: Concurrent refresh attempts cannot both succeed; exactly one succeeds');
+    }
+
+    // -------------------------------------------------------------------------
+    // Criterion 14: A conditional update affecting zero rows does not issue cookies
+    // -------------------------------------------------------------------------
+    {
+      process.env.NODE_ENV = 'development';
+      const store = new MockLifecycleStore();
+      const adminUser: AuthoritativeUserRecord = {
+        id: 'usr_staff_admin_01',
+        email: 'admin@dialpulse.internal',
+        fullName: 'Admin',
+        platformRole: 'platform_admin',
+        isPlatformStaff: true,
+        isActive: true,
+      };
+      store.users.set(adminUser.id, adminUser);
+      store.rolePermissions.set('platform_admin', ['platform:overview:read']);
+
+      const { token: rt1, hash: rt1Hash, expiresAt: rt1ExpiresAt } = generateRefreshToken();
+      const sessionId = 'ses_zero_row_test';
+      store.sessions.set(sessionId, {
+        id: sessionId,
+        userId: adminUser.id,
+        refreshTokenHash: rt1Hash,
+        previousRefreshTokenHash: null,
+        isRevoked: false,
+        expiresAt: rt1ExpiresAt,
+      });
+
+      // Force 0 rows updated
+      store.simulatedZeroRowUpdate = true;
+
+      const { server } = createLifecycleTestServer(store);
+      await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', () => resolve()));
+
+      try {
+        const resZero = await makeRequest(server, '/api/auth/refresh', 'POST', {
+          Cookie: `${COOKIE_NAMES.REFRESH_TOKEN}=${rt1}`,
+        });
+
+        assert.strictEqual(resZero.status, 401, 'Zero-row update must fail with 401');
+        assert(
+          !resZero.cookies[COOKIE_NAMES.REFRESH_TOKEN] ||
+          resZero.cookies[COOKIE_NAMES.REFRESH_TOKEN].value === '' ||
+          resZero.cookies[COOKIE_NAMES.REFRESH_TOKEN].attributes['expires'] !== undefined,
+          'Zero-row update must never issue active refresh cookies'
+        );
+      } finally {
+        await new Promise<void>((resolve) => server.close(() => resolve()));
+      }
+      console.log('  ✓ Criterion 14: Conditional update affecting zero rows does not issue cookies');
+    }
+
+    // -------------------------------------------------------------------------
+    // Criterion 15: Migration safety and existing session backward compatibility
+    // -------------------------------------------------------------------------
+    {
+      const migrationPath = path.resolve(__dirname, '../drizzle/0001_add_previous_refresh_token_hash.sql');
+      assert(fs.existsSync(migrationPath), 'Migration 0001 must exist on disk');
+      const migrationSql = fs.readFileSync(migrationPath, 'utf-8');
+
+      assert(
+        migrationSql.includes('ADD COLUMN IF NOT EXISTS "previous_refresh_token_hash"'),
+        'Migration must safely use ADD COLUMN IF NOT EXISTS for zero-downtime upgrades'
+      );
+      assert(
+        migrationSql.includes('idx_platform_sessions_prev_rf_hash'),
+        'Migration must include index for previous_refresh_token_hash'
+      );
+      assert(
+        migrationSql.includes('idx_platform_sessions_rf_hash'),
+        'Migration must include index for refresh_token_hash'
+      );
+
+      // Verify legacy session records (where previousRefreshTokenHash was null or omitted) work seamlessly
+      const store = new MockLifecycleStore();
+      const adminUser: AuthoritativeUserRecord = {
+        id: 'usr_staff_admin_01',
+        email: 'admin@dialpulse.internal',
+        fullName: 'Admin',
+        platformRole: 'platform_admin',
+        isPlatformStaff: true,
+        isActive: true,
+      };
+      store.users.set(adminUser.id, adminUser);
+      store.rolePermissions.set('platform_admin', ['platform:overview:read']);
+
+      const { token: legacyRt, hash: legacyHash, expiresAt: legacyExpiresAt } = generateRefreshToken();
+      const legacySessionId = 'ses_legacy_pre_migration_01';
+      // Simulating row created before migration (previousRefreshTokenHash is null)
+      store.sessions.set(legacySessionId, {
+        id: legacySessionId,
+        userId: adminUser.id,
+        refreshTokenHash: legacyHash,
+        previousRefreshTokenHash: null,
+        isRevoked: false,
+        expiresAt: legacyExpiresAt,
+      });
+
+      const { server } = createLifecycleTestServer(store);
+      await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', () => resolve()));
+
+      try {
+        const resLegacyRefresh = await makeRequest(server, '/api/auth/refresh', 'POST', {
+          Cookie: `${COOKIE_NAMES.REFRESH_TOKEN}=${legacyRt}`,
+        });
+        assert.strictEqual(resLegacyRefresh.status, 200, 'Existing pre-migration session remains fully functional');
+        const sessionRecord = store.sessions.get(legacySessionId)!;
+        assert.strictEqual(
+          sessionRecord.previousRefreshTokenHash,
+          legacyHash,
+          'Rotated pre-migration session now correctly tracks previousRefreshTokenHash'
+        );
+      } finally {
+        await new Promise<void>((resolve) => server.close(() => resolve()));
+      }
+      console.log('  ✓ Criterion 15: Migration safely alters schema and preserves existing session compatibility');
+    }
+
+    // -------------------------------------------------------------------------
+    // Criterion 16: Unsupported store rotation fails closed with 503
+    // -------------------------------------------------------------------------
+    {
+      const storeWithoutRotation: AuthoritativeDataStore = {
+        getUserById: async () => ({
+          id: 'usr_staff_admin_01',
+          email: 'admin@dialpulse.internal',
+          fullName: 'Admin',
+          platformRole: 'platform_admin',
+          isPlatformStaff: true,
+          isActive: true,
+        }),
+        getSessionByIdAndUser: async () => null,
+        getPermissionsForRole: async () => ['platform:overview:read'],
+        getSessionByRefreshTokenHash: async () => ({
+          id: 'ses_unsupported_test',
+          userId: 'usr_staff_admin_01',
+          refreshTokenHash: 'hash',
+          isRevoked: false,
+          expiresAt: new Date(Date.now() + 3600000),
+        }),
+        // rotateSessionRefreshToken is omitted!
+      };
+
+      const { server } = createLifecycleTestServer(storeWithoutRotation);
+      await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', () => resolve()));
+
+      try {
+        const resUnsupported = await makeRequest(server, '/api/auth/refresh', 'POST', {
+          Cookie: `${COOKIE_NAMES.REFRESH_TOKEN}=dp_rt_arbitrary`,
+        });
+        assert.strictEqual(resUnsupported.status, 503, 'Unsupported rotation must return 503');
+        assert.strictEqual(resUnsupported.body.error, 'ROTATION_UNSUPPORTED');
+      } finally {
+        await new Promise<void>((resolve) => server.close(() => resolve()));
+      }
+      console.log('  ✓ Criterion 16: Store without rotation support fails closed with HTTP 503');
     }
   } finally {
     // Restore environment

@@ -4,7 +4,7 @@ import { PlatformRole, isPlatformRole, isTenantRole, PLATFORM_ROLES, TENANT_ROLE
 import { PlatformPermission } from '../policies/permissions.ts';
 import { getDb, isDatabaseConfigured } from '../db/index.ts';
 import { platformUsers, platformSessions, platformRolePermissions, platformPermissions } from '../db/schema.ts';
-import { eq, and } from 'drizzle-orm';
+import { eq, and, gt } from 'drizzle-orm';
 
 export interface AuthoritativeUserRecord {
   id: string;
@@ -25,6 +25,10 @@ export interface AuthoritativeSessionRecord {
   expiresAt: Date | string;
 }
 
+export interface SessionRotationResult {
+  updated: boolean;
+}
+
 export interface AuthoritativeDataStore {
   getUserById(id: string): Promise<AuthoritativeUserRecord | null>;
   getSessionByIdAndUser(sessionId: string, userId: string): Promise<AuthoritativeSessionRecord | null>;
@@ -37,7 +41,7 @@ export interface AuthoritativeDataStore {
     oldHash: string,
     newExpiresAt: Date,
     meta?: { ipAddress?: string; userAgent?: string }
-  ): Promise<void>;
+  ): Promise<SessionRotationResult>;
   revokeSession?(sessionId: string): Promise<void>;
   revokeAllSessionsForUser?(userId: string): Promise<void>;
 }
@@ -141,12 +145,12 @@ export class PostgresAuthoritativeDataStore implements AuthoritativeDataStore {
     oldHash: string,
     newExpiresAt: Date,
     meta?: { ipAddress?: string; userAgent?: string }
-  ): Promise<void> {
+  ): Promise<SessionRotationResult> {
     const db = getDb();
     if (!db) {
       throw new Error('PostgreSQL database pool is unavailable.');
     }
-    await db
+    const res = await db
       .update(platformSessions)
       .set({
         refreshTokenHash: newHash,
@@ -155,7 +159,17 @@ export class PostgresAuthoritativeDataStore implements AuthoritativeDataStore {
         ipAddress: meta?.ipAddress || null,
         userAgent: meta?.userAgent || null,
       })
-      .where(eq(platformSessions.id, sessionId));
+      .where(
+        and(
+          eq(platformSessions.id, sessionId),
+          eq(platformSessions.refreshTokenHash, oldHash),
+          eq(platformSessions.isRevoked, false),
+          gt(platformSessions.expiresAt, new Date())
+        )
+      )
+      .returning({ id: platformSessions.id });
+
+    return { updated: res.length === 1 };
   }
 
   async revokeSession(sessionId: string): Promise<void> {
@@ -370,17 +384,22 @@ export class StandaloneDevDataStore implements AuthoritativeDataStore {
     oldHash: string,
     newExpiresAt: Date,
     _meta?: { ipAddress?: string; userAgent?: string }
-  ): Promise<void> {
+  ): Promise<SessionRotationResult> {
     if (process.env.NODE_ENV === 'production') {
       throw new Error('StandaloneDevDataStore is disabled in production.');
     }
     const session = this.sessions.get(sessionId);
     if (!session) {
-      throw new Error('Session not found for rotation.');
+      return { updated: false };
+    }
+    const isUnexpired = new Date(session.expiresAt).getTime() > Date.now();
+    if (session.refreshTokenHash !== oldHash || session.isRevoked || !isUnexpired) {
+      return { updated: false };
     }
     session.refreshTokenHash = newHash;
     session.previousRefreshTokenHash = oldHash;
     session.expiresAt = newExpiresAt;
+    return { updated: true };
   }
 
   async revokeSession(sessionId: string): Promise<void> {

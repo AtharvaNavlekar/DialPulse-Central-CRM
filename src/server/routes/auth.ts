@@ -477,14 +477,57 @@ router.post('/refresh', async (req: ExtendedRequest, res: Response) => {
     // 6. Rotate refresh token and update session atomically
     const { token: newRefreshToken, hash: newRefreshHash, expiresAt: newRefreshExpiresAt } = generateRefreshToken();
 
-    if (store.rotateSessionRefreshToken) {
-      await store.rotateSessionRefreshToken(
-        session.id,
-        newRefreshHash,
-        tokenHash,
-        newRefreshExpiresAt,
-        { ipAddress: req.clientIp, userAgent: req.headers['user-agent'] }
-      );
+    if (!store.rotateSessionRefreshToken) {
+      res.clearCookie(COOKIE_NAMES.ACCESS_TOKEN, getClearCookieOptions());
+      res.clearCookie(COOKIE_NAMES.REFRESH_TOKEN, getClearCookieOptions());
+      return res.status(503).json({
+        error: 'ROTATION_UNSUPPORTED',
+        message: 'Authoritative platform data store does not support atomic session rotation.',
+      });
+    }
+
+    const rotationResult = await store.rotateSessionRefreshToken(
+      session.id,
+      newRefreshHash,
+      tokenHash,
+      newRefreshExpiresAt,
+      { ipAddress: req.clientIp, userAgent: req.headers['user-agent'] }
+    );
+
+    if (!rotationResult || !rotationResult.updated) {
+      // 0 rows updated! Check if token was rotated by a concurrent request (reuse detection)
+      if (store.findSessionByPreviousRefreshTokenHash) {
+        const reusedSession = await store.findSessionByPreviousRefreshTokenHash(tokenHash);
+        if (reusedSession) {
+          if (store.revokeSession) {
+            await store.revokeSession(reusedSession.id);
+          }
+          res.clearCookie(COOKIE_NAMES.ACCESS_TOKEN, getClearCookieOptions());
+          res.clearCookie(COOKIE_NAMES.REFRESH_TOKEN, getClearCookieOptions());
+
+          await AuditService.record({
+            action: 'session_reuse_detected',
+            targetType: 'session',
+            targetId: reusedSession.id,
+            result: 'denied',
+            ipAddress: req.clientIp,
+            userAgent: req.headers['user-agent'],
+            details: { userId: reusedSession.userId, conflict: 'concurrent_or_replayed_token' },
+          }).catch(() => {});
+
+          return res.status(401).json({
+            error: 'SESSION_REUSE_DETECTED',
+            message: 'Refresh token reuse detected. Platform session has been revoked for security.',
+          });
+        }
+      }
+
+      res.clearCookie(COOKIE_NAMES.ACCESS_TOKEN, getClearCookieOptions());
+      res.clearCookie(COOKIE_NAMES.REFRESH_TOKEN, getClearCookieOptions());
+      return res.status(401).json({
+        error: 'CONCURRENT_ROTATION_CONFLICT',
+        message: 'Platform session rotation conflict or session state changed. Please authenticate again.',
+      });
     }
 
     // 7. Issue new short-lived access token bound to the rotated session
