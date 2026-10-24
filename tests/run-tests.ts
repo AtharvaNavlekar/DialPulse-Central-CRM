@@ -12,6 +12,7 @@ if (!process.env.NODE_ENV) {
 import { runConfigTests } from './config.test.ts';
 import { runAuthTests } from './auth.test.ts';
 import { runCredentialsTests } from './credentials.test.ts';
+import { runSessionLifecycleTests } from './session-lifecycle.test.ts';
 import { runRbacTests } from './rbac.test.ts';
 import { runSecurityTests } from './security.test.ts';
 import { runSdlcTests } from './sdlc.test.ts';
@@ -27,6 +28,7 @@ async function main() {
     await runConfigTests();
     await runAuthTests();
     await runCredentialsTests();
+    await runSessionLifecycleTests();
     await runRbacTests();
     await runSecurityTests();
     await runSdlcTests();

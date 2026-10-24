@@ -1,15 +1,26 @@
 import { Router, Response } from 'express';
 import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
+import jwt from 'jsonwebtoken';
 import { ExtendedRequest } from '../middleware/request-context.ts';
-import { signAccessToken, generateRefreshToken } from '../auth/token.ts';
+import { signAccessToken, generateRefreshToken, hashToken, verifyAccessToken } from '../auth/token.ts';
 import { requirePlatformAuth } from '../middleware/auth.ts';
 import { getDb, isDatabaseConfigured } from '../db/index.ts';
 import { platformUsers, platformSessions } from '../db/schema.ts';
 import { eq } from 'drizzle-orm';
-import { getPermissionsForRole } from '../policies/rbac.ts';
+import { getPermissionsForRole, PlatformRole } from '../policies/rbac.ts';
 import { AuditService } from '../audit/service.ts';
-import { standaloneDevStore } from '../auth/authoritative-validator.ts';
+import {
+  AuthoritativeDataStore,
+  PostgresAuthoritativeDataStore,
+  standaloneDevStore,
+} from '../auth/authoritative-validator.ts';
+import {
+  COOKIE_NAMES,
+  getAccessTokenCookieOptions,
+  getRefreshTokenCookieOptions,
+  getClearCookieOptions,
+} from '../auth/cookies.ts';
 
 const router = Router();
 
@@ -290,7 +301,7 @@ router.post('/login', async (req: ExtendedRequest, res: Response) => {
     }
   } else {
     // Record in development standalone store
-    standaloneDevStore.createSession(sessionId, user.id, refreshExpiresAt);
+    standaloneDevStore.createSession(sessionId, user.id, refreshExpiresAt, refreshHash);
   }
 
   // Sign access token with session binding
@@ -302,20 +313,9 @@ router.post('/login', async (req: ExtendedRequest, res: Response) => {
     sessionId,
   });
 
-  // Set HTTP-only cookies
-  res.cookie('dp_central_access_token', accessToken, {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'lax',
-    maxAge: 15 * 60 * 1000,
-  });
-
-  res.cookie('dp_central_refresh_token', refreshToken, {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'lax',
-    maxAge: 7 * 24 * 60 * 60 * 1000,
-  });
+  // Set HTTP-only cookies with secure attributes
+  res.cookie(COOKIE_NAMES.ACCESS_TOKEN, accessToken, getAccessTokenCookieOptions());
+  res.cookie(COOKIE_NAMES.REFRESH_TOKEN, refreshToken, getRefreshTokenCookieOptions());
 
   await AuditService.record({
     actor: {
@@ -332,10 +332,9 @@ router.post('/login', async (req: ExtendedRequest, res: Response) => {
     details: { isDbBacked, role: user.platformRole },
   }).catch(() => {});
 
+  // Never return access tokens or refresh tokens in login JSON responses
   return res.json({
     success: true,
-    accessToken,
-    refreshToken,
     user: {
       id: user.id,
       email: user.email,
@@ -349,30 +348,282 @@ router.post('/login', async (req: ExtendedRequest, res: Response) => {
 });
 
 /**
- * POST /api/auth/logout
- * Revokes active platform session in the authoritative database.
+ * POST /api/auth/refresh
+ * Rotates the refresh token and issues a new access token via HTTP-only cookies.
+ *
+ * Requirements:
+ * 1. Read refresh token strictly from HTTP-only cookie 'dp_central_refresh_token'.
+ * 2. Hash token (SHA-256) before comparing with stored hash.
+ * 3. Reject reuse: if previousRefreshTokenHash matches, revoke the session immediately and return 401.
+ * 4. Require matching, active, unexpired, and non-revoked platform session.
+ * 5. Verify associated staff account is still active and platform staff.
+ * 6. Atomically update stored refresh-token hash, previous hash, and session expiry.
+ * 7. Issue new short-lived access-token cookie and rotated refresh-token cookie.
+ * 8. Never return token values in JSON.
+ * 9. Fail closed (503 Service Unavailable) if PostgreSQL is unavailable.
  */
-router.post('/logout', requirePlatformAuth, async (req: ExtendedRequest, res: Response) => {
-  const sessionId = req.securityContext?.sessionId;
+router.post('/refresh', async (req: ExtendedRequest, res: Response) => {
+  const rawRefreshToken = req.cookies?.[COOKIE_NAMES.REFRESH_TOKEN];
 
-  if (sessionId) {
-    if (isDatabaseConfigured()) {
-      try {
-        const db = getDb();
-        if (db) {
-          await db.update(platformSessions)
-            .set({ isRevoked: true })
-            .where(eq(platformSessions.id, sessionId));
+  if (!rawRefreshToken || typeof rawRefreshToken !== 'string') {
+    return res.status(401).json({
+      error: 'REFRESH_TOKEN_REQUIRED',
+      message: 'Refresh token cookie is missing or invalid. Please authenticate.',
+    });
+  }
+
+  // Production Central CRM must fail closed if PostgreSQL is not configured
+  if (process.env.NODE_ENV === 'production' && !isDatabaseConfigured()) {
+    return res.status(503).json({
+      error: 'DATABASE_REQUIRED',
+      message: 'PostgreSQL database connection is required for production Central CRM authentication.',
+    });
+  }
+
+  const tokenHash = hashToken(rawRefreshToken);
+
+  let store: AuthoritativeDataStore;
+  const customStore = req.app?.get('authoritativeStore');
+  if (customStore) {
+    store = customStore;
+  } else if (isDatabaseConfigured()) {
+    store = new PostgresAuthoritativeDataStore();
+  } else {
+    store = standaloneDevStore;
+  }
+
+  try {
+    // 1. Detect reuse: check if token matches a previous refresh token
+    if (store.findSessionByPreviousRefreshTokenHash) {
+      const reusedSession = await store.findSessionByPreviousRefreshTokenHash(tokenHash);
+      if (reusedSession) {
+        // Immediate safe revocation of compromised session
+        if (store.revokeSession) {
+          await store.revokeSession(reusedSession.id);
         }
-      } catch (err: any) {
-        console.warn('[AUTH_AUTHORITY] Error revoking session in DB:', err.message);
+        res.clearCookie(COOKIE_NAMES.ACCESS_TOKEN, getClearCookieOptions());
+        res.clearCookie(COOKIE_NAMES.REFRESH_TOKEN, getClearCookieOptions());
+
+        await AuditService.record({
+          action: 'session_reuse_detected',
+          targetType: 'session',
+          targetId: reusedSession.id,
+          result: 'denied',
+          ipAddress: req.clientIp,
+          userAgent: req.headers['user-agent'],
+          details: { userId: reusedSession.userId },
+        }).catch(() => {});
+
+        return res.status(401).json({
+          error: 'SESSION_REUSE_DETECTED',
+          message: 'Refresh token reuse detected. Platform session has been revoked for security.',
+        });
       }
-    } else {
-      standaloneDevStore.revokeSession(sessionId);
+    }
+
+    // 2. Query session by active refresh token hash
+    let session: any = null;
+    if (store.getSessionByRefreshTokenHash) {
+      session = await store.getSessionByRefreshTokenHash(tokenHash);
+    }
+
+    if (!session) {
+      res.clearCookie(COOKIE_NAMES.ACCESS_TOKEN, getClearCookieOptions());
+      res.clearCookie(COOKIE_NAMES.REFRESH_TOKEN, getClearCookieOptions());
+      return res.status(401).json({
+        error: 'INVALID_REFRESH_TOKEN',
+        message: 'Invalid platform refresh token.',
+      });
+    }
+
+    // 3. Verify session is not revoked
+    if (session.isRevoked) {
+      res.clearCookie(COOKIE_NAMES.ACCESS_TOKEN, getClearCookieOptions());
+      res.clearCookie(COOKIE_NAMES.REFRESH_TOKEN, getClearCookieOptions());
+      return res.status(401).json({
+        error: 'SESSION_REVOKED',
+        message: 'Platform session has been revoked. Please log in again.',
+      });
+    }
+
+    // 4. Verify session is not expired
+    const expiryTime = new Date(session.expiresAt).getTime();
+    if (Date.now() > expiryTime) {
+      if (store.revokeSession) {
+        await store.revokeSession(session.id);
+      }
+      res.clearCookie(COOKIE_NAMES.ACCESS_TOKEN, getClearCookieOptions());
+      res.clearCookie(COOKIE_NAMES.REFRESH_TOKEN, getClearCookieOptions());
+      return res.status(401).json({
+        error: 'SESSION_EXPIRED',
+        message: 'Platform session has expired. Please log in again.',
+      });
+    }
+
+    // 5. Verify authoritative staff account in database
+    const user = await store.getUserById(session.userId);
+    if (!user || !user.isActive || !user.isPlatformStaff) {
+      if (store.revokeSession) {
+        await store.revokeSession(session.id);
+      }
+      res.clearCookie(COOKIE_NAMES.ACCESS_TOKEN, getClearCookieOptions());
+      res.clearCookie(COOKIE_NAMES.REFRESH_TOKEN, getClearCookieOptions());
+      return res.status(403).json({
+        error: 'ACCOUNT_DISABLED',
+        message: 'Platform staff account is deactivated or not privileged in database.',
+      });
+    }
+
+    // 6. Rotate refresh token and update session atomically
+    const { token: newRefreshToken, hash: newRefreshHash, expiresAt: newRefreshExpiresAt } = generateRefreshToken();
+
+    if (store.rotateSessionRefreshToken) {
+      await store.rotateSessionRefreshToken(
+        session.id,
+        newRefreshHash,
+        tokenHash,
+        newRefreshExpiresAt,
+        { ipAddress: req.clientIp, userAgent: req.headers['user-agent'] }
+      );
+    }
+
+    // 7. Issue new short-lived access token bound to the rotated session
+    const newAccessToken = signAccessToken({
+      sub: user.id,
+      email: user.email,
+      role: user.platformRole,
+      isPlatformStaff: true,
+      sessionId: session.id,
+    });
+
+    // 8. Set HTTP-only cookies with required security attributes
+    res.cookie(COOKIE_NAMES.ACCESS_TOKEN, newAccessToken, getAccessTokenCookieOptions());
+    res.cookie(COOKIE_NAMES.REFRESH_TOKEN, newRefreshToken, getRefreshTokenCookieOptions());
+
+    await AuditService.record({
+      actor: {
+        actorId: user.id,
+        actorEmail: user.email,
+        actorPlatformRole: user.platformRole,
+      },
+      action: 'platform_session_refreshed',
+      targetType: 'session',
+      targetId: session.id,
+      result: 'success',
+      ipAddress: req.clientIp,
+      userAgent: req.headers['user-agent'],
+      details: { role: user.platformRole },
+    }).catch(() => {});
+
+    // Never return token values in JSON
+    return res.json({
+      success: true,
+      message: 'Platform session refreshed.',
+      user: {
+        id: user.id,
+        email: user.email,
+        fullName: user.fullName,
+        platformRole: user.platformRole,
+        isPlatformStaff: true,
+        permissions: getPermissionsForRole(user.platformRole as PlatformRole),
+      },
+    });
+  } catch (err: any) {
+    console.error('[AUTH_AUTHORITY] Refresh token rotation failed:', err.message);
+    return res.status(503).json({
+      error: 'DATABASE_UNAVAILABLE',
+      message: 'Authoritative platform database connection failed during token refresh.',
+    });
+  }
+});
+
+/**
+ * POST /api/auth/logout
+ * Revokes active platform session in the authoritative database and clears HTTP-only cookies.
+ * Does not report successful revocation if database revocation failed.
+ */
+router.post('/logout', async (req: ExtendedRequest, res: Response) => {
+  let sessionId: string | undefined;
+  let userId: string | undefined;
+
+  // 1. Try to extract sessionId from access token (cookie or header)
+  let token: string | undefined;
+  const authHeader = req.headers.authorization;
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    token = authHeader.substring(7).trim();
+  } else if (req.cookies && req.cookies[COOKIE_NAMES.ACCESS_TOKEN]) {
+    token = req.cookies[COOKIE_NAMES.ACCESS_TOKEN];
+  }
+
+  if (token) {
+    try {
+      const payload = verifyAccessToken(token);
+      sessionId = payload.sessionId;
+      userId = payload.sub;
+    } catch {
+      try {
+        const decoded = jwt.decode(token) as any;
+        if (decoded && decoded.sessionId) {
+          sessionId = decoded.sessionId;
+          userId = decoded.sub;
+        }
+      } catch {
+        // Ignore malformed token decode
+      }
+    }
+  }
+
+  let store: AuthoritativeDataStore;
+  const customStore = req.app?.get('authoritativeStore');
+  if (customStore) {
+    store = customStore;
+  } else if (isDatabaseConfigured()) {
+    store = new PostgresAuthoritativeDataStore();
+  } else {
+    store = standaloneDevStore;
+  }
+
+  // 2. If sessionId not extracted from access token, check refresh token cookie
+  const rawRefreshToken = req.cookies?.[COOKIE_NAMES.REFRESH_TOKEN];
+  if (!sessionId && rawRefreshToken) {
+    try {
+      const tokenHash = hashToken(rawRefreshToken);
+      if (store.getSessionByRefreshTokenHash) {
+        const session = await store.getSessionByRefreshTokenHash(tokenHash);
+        if (session) {
+          sessionId = session.id;
+          userId = session.userId;
+        }
+      }
+    } catch (err: any) {
+      console.warn('[AUTH_AUTHORITY] Error resolving session during logout:', err.message);
+      return res.status(503).json({
+        error: 'DATABASE_UNAVAILABLE',
+        message: 'Authoritative platform database connection failed during logout.',
+      });
+    }
+  }
+
+  // 3. Revoke session in authoritative store; fail closed if DB revocation fails
+  if (sessionId) {
+    try {
+      if (store.revokeSession) {
+        await store.revokeSession(sessionId);
+      }
+    } catch (err: any) {
+      console.error('[AUTH_AUTHORITY] Failed to revoke session during logout:', err.message);
+      return res.status(503).json({
+        error: 'LOGOUT_FAILED',
+        message: 'Failed to revoke authoritative session in platform database.',
+      });
     }
 
     await AuditService.record({
-      actor: req.securityContext!,
+      actor: {
+        actorId: userId || 'unknown',
+        actorEmail: 'unknown',
+        actorPlatformRole: 'platform_admin',
+      },
       action: 'platform_staff_logged_out',
       targetType: 'session',
       targetId: sessionId,
@@ -382,8 +633,9 @@ router.post('/logout', requirePlatformAuth, async (req: ExtendedRequest, res: Re
     }).catch(() => {});
   }
 
-  res.clearCookie('dp_central_access_token');
-  res.clearCookie('dp_central_refresh_token');
+  // 4. Consistently clear cookies with exact same options
+  res.clearCookie(COOKIE_NAMES.ACCESS_TOKEN, getClearCookieOptions());
+  res.clearCookie(COOKIE_NAMES.REFRESH_TOKEN, getClearCookieOptions());
 
   return res.json({ success: true, message: 'Logged out successfully. Platform session revoked.' });
 });

@@ -19,6 +19,8 @@ export interface AuthoritativeUserRecord {
 export interface AuthoritativeSessionRecord {
   id: string;
   userId: string;
+  refreshTokenHash?: string;
+  previousRefreshTokenHash?: string | null;
   isRevoked: boolean;
   expiresAt: Date | string;
 }
@@ -27,6 +29,17 @@ export interface AuthoritativeDataStore {
   getUserById(id: string): Promise<AuthoritativeUserRecord | null>;
   getSessionByIdAndUser(sessionId: string, userId: string): Promise<AuthoritativeSessionRecord | null>;
   getPermissionsForRole(role: string): Promise<PlatformPermission[]>;
+  getSessionByRefreshTokenHash?(hash: string): Promise<AuthoritativeSessionRecord | null>;
+  findSessionByPreviousRefreshTokenHash?(hash: string): Promise<AuthoritativeSessionRecord | null>;
+  rotateSessionRefreshToken?(
+    sessionId: string,
+    newHash: string,
+    oldHash: string,
+    newExpiresAt: Date,
+    meta?: { ipAddress?: string; userAgent?: string }
+  ): Promise<void>;
+  revokeSession?(sessionId: string): Promise<void>;
+  revokeAllSessionsForUser?(userId: string): Promise<void>;
 }
 
 /**
@@ -71,9 +84,100 @@ export class PostgresAuthoritativeDataStore implements AuthoritativeDataStore {
     return {
       id: s.id,
       userId: s.userId,
+      refreshTokenHash: s.refreshTokenHash,
+      previousRefreshTokenHash: s.previousRefreshTokenHash,
       isRevoked: s.isRevoked,
       expiresAt: s.expiresAt,
     };
+  }
+
+  async getSessionByRefreshTokenHash(hash: string): Promise<AuthoritativeSessionRecord | null> {
+    const db = getDb();
+    if (!db) {
+      throw new Error('PostgreSQL database pool is unavailable.');
+    }
+    const rows = await db
+      .select()
+      .from(platformSessions)
+      .where(eq(platformSessions.refreshTokenHash, hash))
+      .limit(1);
+    if (rows.length === 0) return null;
+    const s = rows[0];
+    return {
+      id: s.id,
+      userId: s.userId,
+      refreshTokenHash: s.refreshTokenHash,
+      previousRefreshTokenHash: s.previousRefreshTokenHash,
+      isRevoked: s.isRevoked,
+      expiresAt: s.expiresAt,
+    };
+  }
+
+  async findSessionByPreviousRefreshTokenHash(hash: string): Promise<AuthoritativeSessionRecord | null> {
+    const db = getDb();
+    if (!db) {
+      throw new Error('PostgreSQL database pool is unavailable.');
+    }
+    const rows = await db
+      .select()
+      .from(platformSessions)
+      .where(eq(platformSessions.previousRefreshTokenHash, hash))
+      .limit(1);
+    if (rows.length === 0) return null;
+    const s = rows[0];
+    return {
+      id: s.id,
+      userId: s.userId,
+      refreshTokenHash: s.refreshTokenHash,
+      previousRefreshTokenHash: s.previousRefreshTokenHash,
+      isRevoked: s.isRevoked,
+      expiresAt: s.expiresAt,
+    };
+  }
+
+  async rotateSessionRefreshToken(
+    sessionId: string,
+    newHash: string,
+    oldHash: string,
+    newExpiresAt: Date,
+    meta?: { ipAddress?: string; userAgent?: string }
+  ): Promise<void> {
+    const db = getDb();
+    if (!db) {
+      throw new Error('PostgreSQL database pool is unavailable.');
+    }
+    await db
+      .update(platformSessions)
+      .set({
+        refreshTokenHash: newHash,
+        previousRefreshTokenHash: oldHash,
+        expiresAt: newExpiresAt,
+        ipAddress: meta?.ipAddress || null,
+        userAgent: meta?.userAgent || null,
+      })
+      .where(eq(platformSessions.id, sessionId));
+  }
+
+  async revokeSession(sessionId: string): Promise<void> {
+    const db = getDb();
+    if (!db) {
+      throw new Error('PostgreSQL database pool is unavailable.');
+    }
+    await db
+      .update(platformSessions)
+      .set({ isRevoked: true })
+      .where(eq(platformSessions.id, sessionId));
+  }
+
+  async revokeAllSessionsForUser(userId: string): Promise<void> {
+    const db = getDb();
+    if (!db) {
+      throw new Error('PostgreSQL database pool is unavailable.');
+    }
+    await db
+      .update(platformSessions)
+      .set({ isRevoked: true })
+      .where(eq(platformSessions.userId, userId));
   }
 
   async getPermissionsForRole(role: string): Promise<PlatformPermission[]> {
@@ -226,19 +330,77 @@ export class StandaloneDevDataStore implements AuthoritativeDataStore {
     this.rolePermissions.set(role, new Set(permissions));
   }
 
-  createSession(sessionId: string, userId: string, expiresAt: Date): void {
+  createSession(sessionId: string, userId: string, expiresAt: Date, refreshTokenHash?: string): void {
     this.sessions.set(sessionId, {
       id: sessionId,
       userId,
       isRevoked: false,
       expiresAt,
+      refreshTokenHash,
     });
   }
 
-  revokeSession(sessionId: string): void {
+  async getSessionByRefreshTokenHash(hash: string): Promise<AuthoritativeSessionRecord | null> {
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error('StandaloneDevDataStore is disabled in production.');
+    }
+    for (const session of this.sessions.values()) {
+      if (session.refreshTokenHash === hash) {
+        return session;
+      }
+    }
+    return null;
+  }
+
+  async findSessionByPreviousRefreshTokenHash(hash: string): Promise<AuthoritativeSessionRecord | null> {
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error('StandaloneDevDataStore is disabled in production.');
+    }
+    for (const session of this.sessions.values()) {
+      if (session.previousRefreshTokenHash === hash) {
+        return session;
+      }
+    }
+    return null;
+  }
+
+  async rotateSessionRefreshToken(
+    sessionId: string,
+    newHash: string,
+    oldHash: string,
+    newExpiresAt: Date,
+    _meta?: { ipAddress?: string; userAgent?: string }
+  ): Promise<void> {
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error('StandaloneDevDataStore is disabled in production.');
+    }
+    const session = this.sessions.get(sessionId);
+    if (!session) {
+      throw new Error('Session not found for rotation.');
+    }
+    session.refreshTokenHash = newHash;
+    session.previousRefreshTokenHash = oldHash;
+    session.expiresAt = newExpiresAt;
+  }
+
+  async revokeSession(sessionId: string): Promise<void> {
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error('StandaloneDevDataStore is disabled in production.');
+    }
     const s = this.sessions.get(sessionId);
     if (s) {
       s.isRevoked = true;
+    }
+  }
+
+  async revokeAllSessionsForUser(userId: string): Promise<void> {
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error('StandaloneDevDataStore is disabled in production.');
+    }
+    for (const s of this.sessions.values()) {
+      if (s.userId === userId) {
+        s.isRevoked = true;
+      }
     }
   }
 

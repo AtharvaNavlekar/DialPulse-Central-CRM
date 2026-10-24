@@ -1,52 +1,35 @@
 import { PlatformUser, OverviewData, Tenant, AuditRecord, SecurityEventItem, HealthCheckData } from './types.ts';
 
 class ApiClient {
-  private token: string | null = null;
-
-  constructor() {
-    try {
-      if (typeof window !== 'undefined' && typeof window.localStorage !== 'undefined') {
-        this.token = window.localStorage.getItem('dp_central_token');
-      }
-    } catch {
-      // In restricted iframe environments, localStorage access may throw SecurityError
-      this.token = null;
-    }
-  }
-
-  setToken(token: string | null) {
-    this.token = token;
-    try {
-      if (typeof window !== 'undefined' && typeof window.localStorage !== 'undefined') {
-        if (token) {
-          window.localStorage.setItem('dp_central_token', token);
-        } else {
-          window.localStorage.removeItem('dp_central_token');
-        }
-      }
-    } catch {
-      // Gracefully maintain token in memory
-    }
-  }
-
-  getToken(): string | null {
-    return this.token;
-  }
-
   private async request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
+      'X-Requested-With': 'XMLHttpRequest',
       ...(options.headers as Record<string, string>),
     };
 
-    if (this.token) {
-      headers['Authorization'] = `Bearer ${this.token}`;
-    }
-
-    const response = await fetch(endpoint, {
+    let response = await fetch(endpoint, {
+      credentials: 'same-origin',
       ...options,
       headers,
     });
+
+    // Transparent single refresh retry on 401 for authenticated requests
+    if (
+      response.status === 401 &&
+      endpoint !== '/api/auth/login' &&
+      endpoint !== '/api/auth/refresh' &&
+      endpoint !== '/api/auth/logout'
+    ) {
+      const refreshed = await this.refreshToken();
+      if (refreshed) {
+        response = await fetch(endpoint, {
+          credentials: 'same-origin',
+          ...options,
+          headers,
+        });
+      }
+    }
 
     const data = await response.json().catch(() => null);
 
@@ -62,21 +45,31 @@ class ApiClient {
   }
 
   // Auth Endpoints
-  async login(email: string, password: string): Promise<{ success: boolean; accessToken: string; user: PlatformUser }> {
-    const res = await this.request<{ success: boolean; accessToken: string; user: PlatformUser }>('/api/auth/login', {
+  async login(email: string, password: string): Promise<{ success: boolean; user: PlatformUser }> {
+    return this.request<{ success: boolean; user: PlatformUser }>('/api/auth/login', {
       method: 'POST',
       body: JSON.stringify({ email, password }),
     });
-    this.setToken(res.accessToken);
-    return res;
+  }
+
+  async refreshToken(): Promise<boolean> {
+    try {
+      const response = await fetch('/api/auth/refresh', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Requested-With': 'XMLHttpRequest',
+        },
+      });
+      return response.ok;
+    } catch {
+      return false;
+    }
   }
 
   async logout(): Promise<void> {
-    try {
-      await this.request('/api/auth/logout', { method: 'POST' });
-    } finally {
-      this.setToken(null);
-    }
+    await this.request('/api/auth/logout', { method: 'POST' });
   }
 
   async getCurrentUser(): Promise<PlatformUser> {

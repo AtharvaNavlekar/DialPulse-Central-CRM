@@ -14,6 +14,7 @@ import http from 'http';
 import express from 'express';
 import { runSecurityTests } from './security.test.ts';
 import { runCredentialsTests } from './credentials.test.ts';
+import { runSessionLifecycleTests } from './session-lifecycle.test.ts';
 import { signAccessToken } from '../src/server/auth/token.ts';
 import { validatePlatformAuthorization, AuthoritativeDataStore, AuthoritativeUserRecord, AuthoritativeSessionRecord } from '../src/server/auth/authoritative-validator.ts';
 import { PLATFORM_PERMISSIONS, PlatformPermission } from '../src/server/policies/permissions.ts';
@@ -115,6 +116,7 @@ async function main() {
   // 1. Run baseline and existing security tests
   await runSecurityTests();
   await runCredentialsTests();
+  await runSessionLifecycleTests();
 
   console.log(`\n--- Running Specific 12-Point Security Gate Regressions ---`);
 

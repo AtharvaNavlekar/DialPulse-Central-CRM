@@ -30,6 +30,7 @@ export const platformSessions = pgTable('platform_sessions', {
   id: varchar('id', { length: 128 }).primaryKey(),
   userId: varchar('user_id', { length: 64 }).references(() => platformUsers.id, { onDelete: 'cascade' }).notNull(),
   refreshTokenHash: text('refresh_token_hash').notNull(),
+  previousRefreshTokenHash: text('previous_refresh_token_hash'),
   userAgent: text('user_agent'),
   ipAddress: varchar('ip_address', { length: 64 }),
   isRevoked: boolean('is_revoked').default(false).notNull(),
@@ -38,6 +39,8 @@ export const platformSessions = pgTable('platform_sessions', {
 }, (table) => [
   index('idx_platform_sessions_user').on(table.userId),
   index('idx_platform_sessions_expires').on(table.expiresAt),
+  index('idx_platform_sessions_rf_hash').on(table.refreshTokenHash),
+  index('idx_platform_sessions_prev_rf_hash').on(table.previousRefreshTokenHash),
 ]);
 
 /**

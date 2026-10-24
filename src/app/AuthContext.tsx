@@ -21,14 +21,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   useEffect(() => {
     async function loadCurrentSession() {
       try {
-        const token = api.getToken();
-        if (token) {
-          const u = await api.getCurrentUser();
-          setUser(u);
-        }
+        const u = await api.getCurrentUser();
+        setUser(u);
       } catch (err: any) {
-        console.warn('Initial session check failed:', err.message);
-        api.setToken(null);
+        // Attempt token refresh via HTTP-only cookie if initial check fails
+        try {
+          const refreshed = await api.refreshToken();
+          if (refreshed) {
+            const u = await api.getCurrentUser();
+            setUser(u);
+            return;
+          }
+        } catch {
+          // Session unauthenticated or refresh expired
+        }
+        setUser(null);
       } finally {
         setLoading(false);
       }

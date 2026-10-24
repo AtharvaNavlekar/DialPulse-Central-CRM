@@ -8,6 +8,7 @@ dotenv.config();
 
 import { getValidatedConfig } from './src/server/config/env.ts';
 import { requestContextMiddleware } from './src/server/middleware/request-context.ts';
+import { csrfProtectionMiddleware } from './src/server/middleware/csrf.ts';
 
 import authRouter from './src/server/routes/auth.ts';
 import overviewRouter from './src/server/routes/overview.ts';
@@ -31,6 +32,7 @@ const isProd = config.NODE_ENV === 'production';
 app.use(express.json({ limit: '2mb' }));
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
+app.use(csrfProtectionMiddleware);
 app.use(requestContextMiddleware);
 
 // API Route Namespaces
