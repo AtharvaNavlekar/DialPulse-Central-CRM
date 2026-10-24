@@ -1,0 +1,128 @@
+@import "tailwindcss";
+
+@theme {
+  /* Brand Core - DialPulse Primary */
+  --color-primary: #00695c;
+  --color-primary-hover: #004d40;
+  --color-on-primary: #ffffff;
+  --color-primary-container: #cce8e1;
+  --color-on-primary-container: #00201b;
+
+  /* Secondary */
+  --color-secondary: #4a635d;
+  --color-on-secondary: #ffffff;
+  --color-secondary-container: #cce8e0;
+  --color-on-secondary-container: #05201a;
+
+  /* Tertiary */
+  --color-tertiary: #006558;
+  --color-on-tertiary: #ffffff;
+  --color-tertiary-container: #cce8e0;
+
+  /* Error & Semantic */
+  --color-error: #ba1a1a;
+  --color-on-error: #ffffff;
+  --color-error-container: #ffdad6;
+  --color-on-error-container: #410002;
+  --color-success: #10b981;
+  --color-warning: #f59e0b;
+
+  /* Background & Surface Palette - White Canonical Theme */
+  --color-background: #ffffff;
+  --color-on-background: #0f172a;
+  --color-surface: #ffffff;
+  --color-on-surface: #0f172a;
+  --color-surface-secondary: #f8faf9;
+  --color-surface-subtle: #f4f7f6;
+  --color-surface-hover: #f1f5f4;
+  --color-surface-variant: #f8faf9;
+  --color-on-surface-variant: #475569;
+
+  /* Surface Containers */
+  --color-surface-container-lowest: #ffffff;
+  --color-surface-container-low: #f8faf9;
+  --color-surface-container: #f4f7f6;
+  --color-surface-container-high: #f1f5f4;
+  --color-surface-container-highest: #e2e8f0;
+
+  /* Outline & Borders */
+  --color-outline: #e2e8f0;
+  --color-outline-strong: #cbd5e1;
+  --color-outline-variant: #e2e8f0;
+
+  /* Text Colors */
+  --color-text-primary: #0f172a;
+  --color-text-secondary: #475569;
+  --color-text-muted: #64748b;
+
+  /* Typography */
+  --font-display: 'Plus Jakarta Sans', ui-sans-serif, system-ui, sans-serif;
+  --font-heading: 'Plus Jakarta Sans', ui-sans-serif, system-ui, sans-serif;
+  --font-sans: 'Roboto', ui-sans-serif, system-ui, sans-serif;
+  --font-body: 'Roboto', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+
+  /* Motion */
+  --animate-fade-in: fadeIn 0.3s cubic-bezier(0.2, 0, 0, 1) forwards;
+  --animate-slide-up: slideUp 0.4s cubic-bezier(0.2, 0, 0, 1) forwards;
+}
+
+:root {
+  color-scheme: light;
+  background-color: var(--color-background);
+  color: var(--color-on-background);
+  font-family: var(--font-body);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  font-family: var(--font-body);
+  color: #0f172a;
+  background-color: var(--color-surface);
+  margin: 0;
+  padding: 0;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-heading);
+}
+
+.font-display {
+  font-family: var(--font-display);
+}
+
+code, pre, .font-mono {
+  font-family: var(--font-mono);
+}
+
+/* Crisp minimal scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+

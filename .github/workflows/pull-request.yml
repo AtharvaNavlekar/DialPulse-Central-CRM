@@ -1,0 +1,46 @@
+name: Pull Request SDLC Gate
+
+on:
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  sdlc-gate:
+    name: SDLC Verification & Security Gate
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 1. Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 2. Setup Node.js Runtime
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+
+      - name: 3. Install Dependencies
+        run: npm ci
+
+      - name: 4. SDLC PR & Lifecycle Gate
+        run: |
+          npm run verify:sdlc
+          npm run verify:pr
+
+      - name: 5. Typecheck & Code Hygiene
+        run: npm run lint
+
+      - name: 6. Automated Platform Test Suite
+        run: npm test
+
+      - name: 7. Automated Security Regression Suite
+        run: npm run test:security
+
+      - name: 8. Database Schema & Integrity Gate
+        run: npm run verify:db
+
+      - name: 9. Production Build Compilation
+        run: npm run build

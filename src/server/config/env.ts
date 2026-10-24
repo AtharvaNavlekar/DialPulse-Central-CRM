@@ -1,0 +1,107 @@
+import * as dotenv from 'dotenv';
+
+dotenv.config();
+
+export interface ServerConfig {
+  NODE_ENV: 'development' | 'production' | 'test';
+  PORT: number;
+  JWT_SECRET: string;
+  REFRESH_TOKEN_SECRET: string;
+  DATABASE_URL?: string;
+  ALLOW_PRODUCTION_SEED?: boolean;
+}
+
+let cachedConfig: ServerConfig | null = null;
+
+/**
+ * Validates environment variables according to strict platform security rules.
+ * Fails fast and clearly when required secrets are missing.
+ * Never outputs secret values in error messages.
+ */
+export function validateEnv(customEnv?: Record<string, string | undefined>): ServerConfig {
+  const env = customEnv || process.env;
+  const errors: string[] = [];
+
+  // 1. Mandatory JWT_SECRET validation
+  const jwtSecret = env.JWT_SECRET?.trim();
+  if (!jwtSecret) {
+    errors.push('JWT_SECRET is required. A secure secret of at least 32 characters must be configured.');
+  } else if (jwtSecret.length < 32) {
+    errors.push('JWT_SECRET must be at least 32 characters in length for cryptographic security.');
+  }
+
+  // 2. Mandatory REFRESH_TOKEN_SECRET validation
+  const refreshSecret = env.REFRESH_TOKEN_SECRET?.trim();
+  if (!refreshSecret) {
+    errors.push('REFRESH_TOKEN_SECRET is required. A secure secret of at least 32 characters must be configured.');
+  } else if (refreshSecret.length < 32) {
+    errors.push('REFRESH_TOKEN_SECRET must be at least 32 characters in length for cryptographic security.');
+  }
+
+  const nodeEnvRaw = (env.NODE_ENV || 'development').trim().toLowerCase();
+  const nodeEnv: 'development' | 'production' | 'test' =
+    nodeEnvRaw === 'production' ? 'production' : nodeEnvRaw === 'test' ? 'test' : 'development';
+
+  const databaseUrl = env.DATABASE_URL?.trim();
+
+  // 3. Database URL rules
+  if (nodeEnv === 'production' && !databaseUrl) {
+    errors.push('DATABASE_URL is required in production environment.');
+  }
+
+  if (databaseUrl && !databaseUrl.startsWith('postgresql://') && !databaseUrl.startsWith('postgres://')) {
+    errors.push('DATABASE_URL must be a valid PostgreSQL connection string starting with postgresql:// or postgres://.');
+  }
+
+  if (errors.length > 0) {
+    throw new Error(`[CONFIG_VALIDATION_ERROR] Platform configuration validation failed:\n - ${errors.join('\n - ')}`);
+  }
+
+  const port = Number(env.PORT) || 3000;
+
+  return {
+    NODE_ENV: nodeEnv,
+    PORT: port,
+    JWT_SECRET: jwtSecret!,
+    REFRESH_TOKEN_SECRET: refreshSecret!,
+    DATABASE_URL: databaseUrl || undefined,
+    ALLOW_PRODUCTION_SEED: env.ALLOW_PRODUCTION_SEED === 'true',
+  };
+}
+
+/**
+ * Validates that DATABASE_URL is configured for database operations.
+ * Throws a clear error without silently selecting a fallback PostgreSQL URL.
+ */
+export function validateDatabaseConfig(databaseUrl?: string): string {
+  const url = (databaseUrl ?? process.env.DATABASE_URL)?.trim();
+  if (!url) {
+    throw new Error(
+      '[CONFIG_VALIDATION_ERROR] DATABASE_URL is required but was not provided. No fallback database connection is permitted.'
+    );
+  }
+  if (!url.startsWith('postgresql://') && !url.startsWith('postgres://')) {
+    throw new Error(
+      '[CONFIG_VALIDATION_ERROR] DATABASE_URL must start with postgresql:// or postgres://.'
+    );
+  }
+  return url;
+}
+
+/**
+ * Returns the validated platform configuration.
+ * Caches the result in memory for performance.
+ */
+export function getValidatedConfig(): ServerConfig {
+  if (!cachedConfig) {
+    cachedConfig = validateEnv();
+  }
+  return cachedConfig;
+}
+
+/**
+ * Resets the cached configuration (used for isolated test suites).
+ */
+export function resetConfigCache(): void {
+  cachedConfig = null;
+}

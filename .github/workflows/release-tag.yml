@@ -1,0 +1,46 @@
+name: Production Release Gate
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  release-verification:
+    name: Production Release Gate & Artifact Generation
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 1. Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: 2. Setup Node.js Runtime
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+
+      - name: 3. Install Dependencies
+        run: npm ci
+
+      - name: 4. Full Canonical Verification Gate
+        run: npm run verify
+
+      - name: 5. 10-Point Release Gate Verification
+        run: npm run verify:release
+
+      - name: 6. Production Build
+        run: npm run build
+
+      - name: 7. Package Release Artifacts
+        run: |
+          mkdir -p release-artifact
+          cp -r dist server.ts package.json package-lock.json* bun.lock* release-artifact/
+          tar -czf central-crm-release-${{ github.ref_name }}.tar.gz release-artifact/
+
+      - name: 8. Upload Release Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: central-crm-release-${{ github.ref_name }}
+          path: central-crm-release-${{ github.ref_name }}.tar.gz
+          retention-days: 30

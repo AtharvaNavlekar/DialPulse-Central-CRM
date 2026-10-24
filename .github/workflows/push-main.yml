@@ -1,0 +1,36 @@
+name: Push to Main Verification Gate
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  main-verification:
+    name: Canonical Verification & Operational Gate
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 1. Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: 2. Setup Node.js Runtime
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+
+      - name: 3. Install Dependencies
+        run: npm ci
+
+      - name: 4. Canonical Verification Gate (lint -> test -> build)
+        run: npm run verify
+
+      - name: 5. Automated Security Regression Suite
+        run: npm run test:security
+
+      - name: 6. Database Schema Integrity Gate
+        run: npm run verify:db
+
+      - name: 7. Operational Readiness Gate
+        run: npm run verify:ops

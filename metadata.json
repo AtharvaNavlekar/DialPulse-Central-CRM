@@ -1,0 +1,6 @@
+{
+  "name": "DialPulse Central CRM",
+  "description": "Internal Platform Control Center for authorized DialPulse platform staff to manage and observe the DialPulse platform.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
