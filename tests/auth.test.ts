@@ -49,7 +49,7 @@ export async function runAuthTests() {
 
   // Test 3: Password hashing and validation
   {
-    const password = 'CentralPlatform2026!';
+    const password = 'TestBootstrapSecurePassphrase987!#';
     const hash = await bcrypt.hash(password, 10);
     const isValid = await bcrypt.compare(password, hash);
     const isInvalid = await bcrypt.compare('WrongPassword123!', hash);

@@ -159,7 +159,7 @@ export async function runConfigTests() {
     console.log('  ✓ Test E: No code path silently selects a fallback JWT secret');
   }
 
-  // Test F: Development seed remains explicit
+  // Test F: Production seed execution is rejected regardless of the old override
   {
     const originalEnv = process.env.NODE_ENV;
     const originalSeed = process.env.ALLOW_PRODUCTION_SEED;
@@ -167,15 +167,25 @@ export async function runConfigTests() {
       process.env.NODE_ENV = 'production';
       delete process.env.ALLOW_PRODUCTION_SEED;
 
-      const result = await runDatabaseSeed();
-      assert.strictEqual(result.success, false, 'runDatabaseSeed must not run automatically in production');
-      assert.strictEqual(result.error, 'PRODUCTION_SEED_DISABLED');
-      assert(result.message.includes('restricted in production'));
+      const resultWithoutOverride = await runDatabaseSeed();
+      assert.strictEqual(resultWithoutOverride.success, false, 'runDatabaseSeed must not run in production');
+      assert.strictEqual(resultWithoutOverride.error, 'PRODUCTION_SEED_FORBIDDEN');
+      assert(resultWithoutOverride.message.includes('forbidden in production'));
+
+      // Even with the obsolete ALLOW_PRODUCTION_SEED=true override, production seeding must be rejected
+      process.env.ALLOW_PRODUCTION_SEED = 'true';
+      const resultWithOverride = await runDatabaseSeed();
+      assert.strictEqual(resultWithOverride.success, false, 'runDatabaseSeed must reject production seeding even if ALLOW_PRODUCTION_SEED=true');
+      assert.strictEqual(resultWithOverride.error, 'PRODUCTION_SEED_FORBIDDEN');
     } finally {
       process.env.NODE_ENV = originalEnv;
-      if (originalSeed) process.env.ALLOW_PRODUCTION_SEED = originalSeed;
+      if (originalSeed !== undefined) {
+        process.env.ALLOW_PRODUCTION_SEED = originalSeed;
+      } else {
+        delete process.env.ALLOW_PRODUCTION_SEED;
+      }
     }
-    console.log('  ✓ Test F: Development seed remains explicit and blocked in production');
+    console.log('  ✓ Test F: Production seed execution is strictly rejected regardless of overrides');
   }
 
   // Test G: Development default secrets are rejected in production

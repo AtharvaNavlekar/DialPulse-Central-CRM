@@ -8,7 +8,6 @@ export interface ServerConfig {
   JWT_SECRET: string;
   REFRESH_TOKEN_SECRET: string;
   DATABASE_URL?: string;
-  ALLOW_PRODUCTION_SEED?: boolean;
 }
 
 let cachedConfig: ServerConfig | null = null;
@@ -22,6 +21,7 @@ const DEV_SECRET_PATTERNS: readonly string[] = [
   'dialpulse-central-crm-refresh-secret-key',
   'replace-with-ultra-secure-min-32-char-platform-secret',
   'replace-with-ultra-secure-min-32-char-refresh-secret',
+  'CentralPlatform2026!',
 ];
 
 /**
@@ -93,7 +93,6 @@ export function validateEnv(customEnv?: Record<string, string | undefined>): Ser
     JWT_SECRET: jwtSecret!,
     REFRESH_TOKEN_SECRET: refreshSecret!,
     DATABASE_URL: databaseUrl || undefined,
-    ALLOW_PRODUCTION_SEED: env.ALLOW_PRODUCTION_SEED === 'true',
   };
 }
 

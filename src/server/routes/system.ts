@@ -187,11 +187,11 @@ router.post(
   requirePlatformAuth,
   requirePlatformPermission(PLATFORM_PERMISSIONS.STAFF_MANAGE),
   async (req: ExtendedRequest, res: Response) => {
-    if (process.env.NODE_ENV === 'production' && !process.env.ALLOW_PRODUCTION_SEED) {
+    if (process.env.NODE_ENV === 'production') {
       return res.status(403).json({
         success: false,
-        error: 'PRODUCTION_SEED_DISABLED',
-        message: 'Development database seeding is restricted in production. Set ALLOW_PRODUCTION_SEED=true to override.',
+        error: 'PRODUCTION_SEED_FORBIDDEN',
+        message: 'Database seeding of development accounts and sample tenants is strictly forbidden in production. Production staff provisioning must be performed via dedicated administrative provisioning tools.',
       });
     }
     const result = await runDatabaseSeed();

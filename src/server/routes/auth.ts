@@ -13,34 +13,37 @@ import { standaloneDevStore } from '../auth/authoritative-validator.ts';
 
 const router = Router();
 
-// Pre-defined standalone dev staff for local offline development when DATABASE_URL is not configured
-const DEV_STANDALONE_STAFF = [
+interface DevStaffDefinition {
+  id: string;
+  email: string;
+  fullName: string;
+  platformRole: 'platform_admin' | 'platform_support' | 'platform_security';
+  envVar: string;
+}
+
+// Standalone dev staff definitions for local development when DATABASE_URL is not configured.
+// Passwords are NEVER hardcoded in code; each role requires its own server-side environment secret.
+export const DEV_STANDALONE_STAFF: readonly DevStaffDefinition[] = [
   {
     id: 'usr_staff_admin_01',
     email: 'admin@dialpulse.internal',
     fullName: 'Aarav Patel (Platform Admin)',
-    platformRole: 'platform_admin' as const,
-    passwordHash: bcrypt.hashSync('CentralPlatform2026!', 10),
-    isPlatformStaff: true,
-    isActive: true,
+    platformRole: 'platform_admin',
+    envVar: 'DEV_ADMIN_PASSWORD',
   },
   {
     id: 'usr_staff_support_01',
     email: 'support@dialpulse.internal',
     fullName: 'Priya Sharma (Platform Support)',
-    platformRole: 'platform_support' as const,
-    passwordHash: bcrypt.hashSync('CentralPlatform2026!', 10),
-    isPlatformStaff: true,
-    isActive: true,
+    platformRole: 'platform_support',
+    envVar: 'DEV_SUPPORT_PASSWORD',
   },
   {
     id: 'usr_staff_sec_01',
     email: 'security@dialpulse.internal',
     fullName: 'Vikram Malhotra (SOC Officer)',
-    platformRole: 'platform_security' as const,
-    passwordHash: bcrypt.hashSync('CentralPlatform2026!', 10),
-    isPlatformStaff: true,
-    isActive: true,
+    platformRole: 'platform_security',
+    envVar: 'DEV_SECURITY_PASSWORD',
   },
 ];
 
@@ -91,44 +94,154 @@ router.post('/login', async (req: ExtendedRequest, res: Response) => {
     }
   }
 
-  // Fallback to standalone dev staff ONLY in development when DATABASE_URL is not set
-  if (!user && !isDbBacked && process.env.NODE_ENV !== 'production') {
-    user = DEV_STANDALONE_STAFF.find((s) => s.email === cleanEmail);
-  }
+  // In database-backed mode: verify password against PostgreSQL passwordHash
+  if (isDbBacked && user) {
+    // Explicit rejection: shared deprecated default password must never authenticate
+    if (password === 'CentralPlatform2026!') {
+      await AuditService.record({
+        action: 'login_failed_deprecated_shared_password_attempt',
+        targetType: 'auth',
+        targetId: user.id,
+        result: 'denied',
+        ipAddress: req.clientIp,
+        userAgent: req.headers['user-agent'],
+        details: { email: cleanEmail },
+      }).catch(() => {});
 
-  if (!user) {
-    await AuditService.record({
-      action: 'login_failed_user_not_found',
-      targetType: 'auth',
-      result: 'denied',
-      ipAddress: req.clientIp,
-      userAgent: req.headers['user-agent'],
-      details: { attemptedEmail: cleanEmail },
-    }).catch(() => {});
+      return res.status(401).json({
+        error: 'INVALID_CREDENTIALS',
+        message: 'Invalid platform staff credentials.',
+      });
+    }
 
-    return res.status(401).json({
-      error: 'INVALID_CREDENTIALS',
-      message: 'Invalid platform staff credentials.',
-    });
-  }
+    const passwordValid = await bcrypt.compare(String(password), user.passwordHash);
+    if (!passwordValid) {
+      await AuditService.record({
+        action: 'login_failed_invalid_password',
+        targetType: 'auth',
+        targetId: user.id,
+        result: 'denied',
+        ipAddress: req.clientIp,
+        userAgent: req.headers['user-agent'],
+        details: { email: cleanEmail },
+      }).catch(() => {});
 
-  // Verify password hash
-  const passwordValid = await bcrypt.compare(password, user.passwordHash);
-  if (!passwordValid) {
-    await AuditService.record({
-      action: 'login_failed_invalid_password',
-      targetType: 'auth',
-      targetId: user.id,
-      result: 'denied',
-      ipAddress: req.clientIp,
-      userAgent: req.headers['user-agent'],
-      details: { email: cleanEmail },
-    }).catch(() => {});
+      return res.status(401).json({
+        error: 'INVALID_CREDENTIALS',
+        message: 'Invalid platform staff credentials.',
+      });
+    }
+  } else {
+    // Standalone development authentication:
+    // 1. MUST only be accessible when NODE_ENV === 'development'
+    // 2. MUST only be accessible when DATABASE_URL is not configured
+    // 3. NEVER accessible in production
+    if (process.env.NODE_ENV !== 'development' || isDatabaseConfigured()) {
+      await AuditService.record({
+        action: 'login_failed_user_not_found',
+        targetType: 'auth',
+        result: 'denied',
+        ipAddress: req.clientIp,
+        userAgent: req.headers['user-agent'],
+        details: { attemptedEmail: cleanEmail },
+      }).catch(() => {});
 
-    return res.status(401).json({
-      error: 'INVALID_CREDENTIALS',
-      message: 'Invalid platform staff credentials.',
-    });
+      return res.status(401).json({
+        error: 'INVALID_CREDENTIALS',
+        message: 'Invalid platform staff credentials.',
+      });
+    }
+
+    const staffDef = DEV_STANDALONE_STAFF.find((s) => s.email === cleanEmail);
+    if (!staffDef) {
+      await AuditService.record({
+        action: 'login_failed_user_not_found',
+        targetType: 'auth',
+        result: 'denied',
+        ipAddress: req.clientIp,
+        userAgent: req.headers['user-agent'],
+        details: { attemptedEmail: cleanEmail },
+      }).catch(() => {});
+
+      return res.status(401).json({
+        error: 'INVALID_CREDENTIALS',
+        message: 'Invalid platform staff credentials.',
+      });
+    }
+
+    // Separate server-side environment variables for admin, support, and security
+    const configuredPassword = (
+      process.env[staffDef.envVar] ||
+      process.env[`DEV_PLATFORM_${staffDef.platformRole.toUpperCase().replace('PLATFORM_', '')}_PASSWORD`]
+    )?.trim();
+
+    // If the required environment configuration is absent, disable standalone login and return a clear, safe configuration error
+    if (!configuredPassword) {
+      await AuditService.record({
+        action: 'login_failed_dev_credentials_unconfigured',
+        targetType: 'auth',
+        targetId: staffDef.id,
+        result: 'denied',
+        ipAddress: req.clientIp,
+        userAgent: req.headers['user-agent'],
+        details: { role: staffDef.platformRole, reason: 'Missing dev password environment configuration' },
+      }).catch(() => {});
+
+      return res.status(503).json({
+        error: 'DEV_CREDENTIALS_UNCONFIGURED',
+        message: `Standalone development authentication is disabled: '${staffDef.envVar}' is not configured in server environment.`,
+      });
+    }
+
+    // Explicit rejection: shared deprecated default password must never authenticate
+    if (password === 'CentralPlatform2026!' || configuredPassword === 'CentralPlatform2026!') {
+      await AuditService.record({
+        action: 'login_failed_deprecated_shared_password_attempt',
+        targetType: 'auth',
+        targetId: staffDef.id,
+        result: 'denied',
+        ipAddress: req.clientIp,
+        userAgent: req.headers['user-agent'],
+        details: { role: staffDef.platformRole },
+      }).catch(() => {});
+
+      return res.status(401).json({
+        error: 'INVALID_CREDENTIALS',
+        message: 'Invalid platform staff credentials.',
+      });
+    }
+
+    // Constant-time comparison prevents timing analysis
+    const inputBuf = Buffer.from(String(password));
+    const expectedBuf = Buffer.from(configuredPassword);
+    const passwordValid =
+      inputBuf.length === expectedBuf.length && crypto.timingSafeEqual(inputBuf, expectedBuf);
+
+    if (!passwordValid) {
+      await AuditService.record({
+        action: 'login_failed_invalid_password',
+        targetType: 'auth',
+        targetId: staffDef.id,
+        result: 'denied',
+        ipAddress: req.clientIp,
+        userAgent: req.headers['user-agent'],
+        details: { email: cleanEmail },
+      }).catch(() => {});
+
+      return res.status(401).json({
+        error: 'INVALID_CREDENTIALS',
+        message: 'Invalid platform staff credentials.',
+      });
+    }
+
+    user = {
+      id: staffDef.id,
+      email: staffDef.email,
+      fullName: staffDef.fullName,
+      platformRole: staffDef.platformRole,
+      isPlatformStaff: true,
+      isActive: true,
+    };
   }
 
   // Verify staff active status

@@ -17,17 +17,71 @@ import { getValidatedConfig } from '../config/env.ts';
  * Never runs automatically in production.
  * Explicitly marks seeded entities with development metadata.
  */
-export async function runDatabaseSeed(): Promise<{ success: boolean; message: string; details?: any; error?: string }> {
+export async function runDatabaseSeed(options?: {
+  adminPassword?: string;
+  supportPassword?: string;
+  securityPassword?: string;
+}): Promise<{ success: boolean; message: string; details?: any; error?: string }> {
   // Always evaluate live environment variables for production security boundary
   const nodeEnv = (process.env.NODE_ENV || 'development').trim().toLowerCase();
-  const allowProdSeed = process.env.ALLOW_PRODUCTION_SEED === 'true';
 
-  // Strict check: Block unapproved seed runs in production
-  if (nodeEnv === 'production' && !allowProdSeed) {
+  // Strict check: Block all seed runs in production regardless of any override flag
+  if (nodeEnv === 'production') {
     return {
       success: false,
-      error: 'PRODUCTION_SEED_DISABLED',
-      message: 'Development database seeding is restricted in production. Set ALLOW_PRODUCTION_SEED=true to override.',
+      error: 'PRODUCTION_SEED_FORBIDDEN',
+      message: 'Database seeding of development accounts and sample tenants is strictly forbidden in production. Production staff provisioning must be performed via dedicated administrative provisioning tools.',
+    };
+  }
+
+  // Require explicit distinct bootstrap passwords for the separate staff accounts
+  const adminPassword = (
+    options?.adminPassword ||
+    process.env.SEED_ADMIN_PASSWORD ||
+    process.env.DEV_ADMIN_PASSWORD
+  )?.trim();
+  const supportPassword = (
+    options?.supportPassword ||
+    process.env.SEED_SUPPORT_PASSWORD ||
+    process.env.DEV_SUPPORT_PASSWORD
+  )?.trim();
+  const securityPassword = (
+    options?.securityPassword ||
+    process.env.SEED_SECURITY_PASSWORD ||
+    process.env.DEV_SECURITY_PASSWORD
+  )?.trim();
+
+  if (!adminPassword || !supportPassword || !securityPassword) {
+    return {
+      success: false,
+      error: 'SEED_PASSWORDS_REQUIRED',
+      message: 'Cannot run seed: Explicit bootstrap passwords (SEED_ADMIN_PASSWORD, SEED_SUPPORT_PASSWORD, SEED_SECURITY_PASSWORD) must be configured in environment.',
+    };
+  }
+
+  // Strict rejection: retired shared default password must not be seeded
+  if (
+    adminPassword === 'CentralPlatform2026!' ||
+    supportPassword === 'CentralPlatform2026!' ||
+    securityPassword === 'CentralPlatform2026!'
+  ) {
+    return {
+      success: false,
+      error: 'SHARED_DEFAULT_PASSWORD_REJECTED',
+      message: 'The shared default password CentralPlatform2026! has been retired and cannot be seeded.',
+    };
+  }
+
+  // Passwords must be distinct for each role
+  if (
+    adminPassword === supportPassword ||
+    adminPassword === securityPassword ||
+    supportPassword === securityPassword
+  ) {
+    return {
+      success: false,
+      error: 'SEED_PASSWORDS_MUST_BE_DISTINCT',
+      message: 'Separate, distinct bootstrap passwords must be configured for admin, support, and security accounts.',
     };
   }
 
@@ -68,9 +122,10 @@ export async function runDatabaseSeed(): Promise<{ success: boolean; message: st
       }
     }
 
-    console.log('[SEED] Seeding default platform staff accounts...');
-    const defaultPassword = 'CentralPlatform2026!';
-    const passwordHash = await bcrypt.hash(defaultPassword, 10);
+    console.log('[SEED] Seeding distinct platform staff accounts with individual hashed credentials...');
+    const adminHash = await bcrypt.hash(adminPassword, 10);
+    const supportHash = await bcrypt.hash(supportPassword, 10);
+    const securityHash = await bcrypt.hash(securityPassword, 10);
 
     const staffUsers = [
       {
@@ -80,6 +135,7 @@ export async function runDatabaseSeed(): Promise<{ success: boolean; message: st
         platformRole: 'platform_admin',
         isPlatformStaff: true,
         isActive: true,
+        passwordHash: adminHash,
       },
       {
         id: 'usr_staff_support_01',
@@ -88,6 +144,7 @@ export async function runDatabaseSeed(): Promise<{ success: boolean; message: st
         platformRole: 'platform_support',
         isPlatformStaff: true,
         isActive: true,
+        passwordHash: supportHash,
       },
       {
         id: 'usr_staff_sec_01',
@@ -96,6 +153,7 @@ export async function runDatabaseSeed(): Promise<{ success: boolean; message: st
         platformRole: 'platform_security',
         isPlatformStaff: true,
         isActive: true,
+        passwordHash: securityHash,
       },
     ];
 
@@ -104,11 +162,12 @@ export async function runDatabaseSeed(): Promise<{ success: boolean; message: st
         id: staff.id,
         email: staff.email,
         fullName: staff.fullName,
-        passwordHash,
+        passwordHash: staff.passwordHash,
         platformRole: staff.platformRole,
         isPlatformStaff: staff.isPlatformStaff,
         isActive: staff.isActive,
-        mfaEnabled: true,
+        // Accurately mark false until real multi-factor authentication challenge flow is implemented
+        mfaEnabled: false,
       }).onConflictDoNothing();
     }
 

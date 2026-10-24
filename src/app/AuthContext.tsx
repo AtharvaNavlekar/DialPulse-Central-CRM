@@ -8,7 +8,6 @@ interface AuthContextType {
   error: string | null;
   login: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
-  switchRoleQuick: (role: PlatformRole) => Promise<void>;
   hasPermission: (permissionCode: string) => boolean;
 }
 
@@ -26,9 +25,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (token) {
           const u = await api.getCurrentUser();
           setUser(u);
-        } else {
-          // Auto-login with default platform admin for review convenience if desired
-          // or leave at login screen. Let's try to restore or fall back cleanly.
         }
       } catch (err: any) {
         console.warn('Initial session check failed:', err.message);
@@ -63,19 +59,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setUser(null);
   };
 
-  const switchRoleQuick = async (role: PlatformRole) => {
-    // Strictly disable quick role evaluation in production environments
-    if (!import.meta.env.DEV) {
-      throw new Error('Quick role evaluation is strictly disabled in production builds.');
-    }
-    const roleEmailMap: Record<PlatformRole, string> = {
-      platform_admin: 'admin@dialpulse.internal',
-      platform_support: 'support@dialpulse.internal',
-      platform_security: 'security@dialpulse.internal',
-    };
-    await login(roleEmailMap[role], 'CentralPlatform2026!');
-  };
-
   const hasPermission = (permissionCode: string): boolean => {
     if (!user) return false;
     return user.permissions.includes(permissionCode);
@@ -89,7 +72,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         error,
         login,
         logout,
-        switchRoleQuick,
         hasPermission,
       }}
     >

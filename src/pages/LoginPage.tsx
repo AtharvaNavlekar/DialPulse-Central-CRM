@@ -9,8 +9,8 @@ import { Card } from '../components/ui/Card.tsx';
 export const LoginPage: React.FC = () => {
   const { login, error: authError } = useAuth();
 
-  const [email, setEmail] = useState('admin@dialpulse.internal');
-  const [password, setPassword] = useState('CentralPlatform2026!');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
 
@@ -27,9 +27,8 @@ export const LoginPage: React.FC = () => {
     }
   };
 
-  const handleQuickFill = (targetEmail: string) => {
+  const handleSelectEmail = (targetEmail: string) => {
     setEmail(targetEmail);
-    setPassword('CentralPlatform2026!');
   };
 
   return (
@@ -99,15 +98,15 @@ export const LoginPage: React.FC = () => {
             </Button>
           </form>
 
-          {/* Development Staff Quick Login Options */}
+          {/* Development Staff Quick Select Options */}
           <div className="pt-4 border-t border-slate-100 space-y-2">
             <div className="text-[10px] font-mono uppercase font-bold text-slate-400 tracking-wider">
-              // Evaluation Staff Credentials
+              // Platform Staff Identities
             </div>
             <div className="grid grid-cols-1 gap-1.5">
               <button
                 type="button"
-                onClick={() => handleQuickFill('admin@dialpulse.internal')}
+                onClick={() => handleSelectEmail('admin@dialpulse.internal')}
                 className="w-full py-2 px-3 rounded-xl bg-[#F8FAF9] hover:bg-slate-100 border border-slate-200 text-left flex items-center justify-between text-xs text-slate-800 transition-colors group cursor-pointer"
               >
                 <div>
@@ -119,7 +118,7 @@ export const LoginPage: React.FC = () => {
 
               <button
                 type="button"
-                onClick={() => handleQuickFill('support@dialpulse.internal')}
+                onClick={() => handleSelectEmail('support@dialpulse.internal')}
                 className="w-full py-2 px-3 rounded-xl bg-[#F8FAF9] hover:bg-slate-100 border border-slate-200 text-left flex items-center justify-between text-xs text-slate-800 transition-colors group cursor-pointer"
               >
                 <div>
@@ -131,7 +130,7 @@ export const LoginPage: React.FC = () => {
 
               <button
                 type="button"
-                onClick={() => handleQuickFill('security@dialpulse.internal')}
+                onClick={() => handleSelectEmail('security@dialpulse.internal')}
                 className="w-full py-2 px-3 rounded-xl bg-[#F8FAF9] hover:bg-slate-100 border border-slate-200 text-left flex items-center justify-between text-xs text-slate-800 transition-colors group cursor-pointer"
               >
                 <div>

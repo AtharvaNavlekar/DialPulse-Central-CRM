@@ -1,35 +1,18 @@
-import React, { useState } from 'react';
+import React from 'react';
 import {
-  Shield,
-  Key,
+  Lock,
   Check,
   X,
-  Users,
-  AlertCircle,
-  Sparkles,
-  Lock,
 } from 'lucide-react';
-import { api } from '../../app/api.ts';
 import { ALL_PERMISSION_DEFINITIONS } from '../../server/policies/permissions.ts';
-import { PLATFORM_ROLES, TENANT_ROLES } from '../../server/policies/rbac.ts';
+import { PLATFORM_ROLES } from '../../server/policies/rbac.ts';
 import { useAuth } from '../../app/AuthContext.tsx';
 import { StatusChip } from '../../components/common/StatusChip.tsx';
 import { PageHeader } from '../../components/ui/PageHeader.tsx';
-import { Button } from '../../components/ui/Button.tsx';
 import { Card } from '../../components/ui/Card.tsx';
 
 export const RbacMatrixView: React.FC = () => {
-  const { user, switchRoleQuick, hasPermission } = useAuth();
-  const [switching, setSwitching] = useState(false);
-
-  const handleRoleSwitch = async (role: any) => {
-    setSwitching(true);
-    try {
-      await switchRoleQuick(role);
-    } finally {
-      setSwitching(false);
-    }
-  };
+  const { user } = useAuth();
 
   const seedStaff = [
     {
@@ -77,17 +60,13 @@ export const RbacMatrixView: React.FC = () => {
         </div>
       </div>
 
-      {/* Staff Accounts Quick Switcher for Evaluation */}
+      {/* Platform Staff Accounts Governance Overview */}
       <Card variant="default" rounded="2xl" className="p-5 space-y-4">
-        <div className="flex items-center justify-between">
-          <div>
-            <h3 className="text-sm font-display font-bold text-slate-900">Platform Staff Accounts</h3>
-            <p className="text-xs text-slate-500">
-              Configured development staff identities. Click "Switch Identity" to test permission
-              enforcement across the application.
-            </p>
-          </div>
-          {switching && <span className="text-[#00695C] font-mono animate-pulse font-medium">Switching session...</span>}
+        <div>
+          <h3 className="text-sm font-display font-bold text-slate-900">Platform Staff Accounts</h3>
+          <p className="text-xs text-slate-500">
+            Platform staff identities and authorized roles. Staff authenticate via the secure login portal using their designated credentials.
+          </p>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5">
@@ -99,7 +78,7 @@ export const RbacMatrixView: React.FC = () => {
                 className={`p-4 rounded-2xl border transition-all flex flex-col justify-between ${
                   isCurrent
                     ? 'bg-teal-50/50 border-[#00695C]/40 shadow-xs'
-                    : 'bg-[#F8FAF9] border-slate-200 hover:border-slate-300'
+                    : 'bg-[#F8FAF9] border-slate-200'
                 }`}
               >
                 <div>
@@ -110,18 +89,19 @@ export const RbacMatrixView: React.FC = () => {
                     </div>
                     <StatusChip status={s.role} type="role" size="sm" />
                   </div>
-                  <p className="text-slate-600 text-[11px] mt-2 mb-4 leading-relaxed">{s.description}</p>
+                  <p className="text-slate-600 text-[11px] mt-2 mb-3 leading-relaxed">{s.description}</p>
                 </div>
 
-                <Button
-                  variant={isCurrent ? 'filled' : 'outlined'}
-                  size="sm"
-                  onClick={() => handleRoleSwitch(s.role)}
-                  disabled={isCurrent || switching}
-                  className="w-full"
-                >
-                  {isCurrent ? 'Current Session' : 'Switch to this Identity'}
-                </Button>
+                <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-[11px]">
+                  <span className="text-slate-400 font-mono">Session:</span>
+                  {isCurrent ? (
+                    <span className="font-semibold text-[#00695C] bg-teal-100/60 px-2 py-0.5 rounded-md">
+                      Active
+                    </span>
+                  ) : (
+                    <span className="text-slate-500">Authenticate via Portal</span>
+                  )}
+                </div>
               </div>
             );
           })}

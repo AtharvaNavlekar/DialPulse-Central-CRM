@@ -4,14 +4,8 @@ import {
   Bell,
   LogOut,
   ChevronDown,
-  UserCheck,
-  Shield,
-  Activity,
-  CheckCircle2,
-  AlertTriangle,
 } from 'lucide-react';
 import { useAuth } from '../../app/AuthContext.tsx';
-import { PlatformRole } from '../../app/types.ts';
 
 interface TopBarProps {
   currentTabName: string;
@@ -26,19 +20,8 @@ export const TopBar: React.FC<TopBarProps> = ({
   dbLatencyMs,
   onOpenDbDetails,
 }) => {
-  const { user, logout, switchRoleQuick } = useAuth();
+  const { user, logout } = useAuth();
   const [profileDropdownOpen, setProfileDropdownOpen] = useState(false);
-  const [switching, setSwitching] = useState(false);
-
-  const handleRoleSwitch = async (role: PlatformRole) => {
-    setSwitching(true);
-    try {
-      await switchRoleQuick(role);
-      setProfileDropdownOpen(false);
-    } finally {
-      setSwitching(false);
-    }
-  };
 
   return (
     <header className="h-14 bg-white border-b border-[#E2E8F0] px-6 flex items-center justify-between z-10 shrink-0">
@@ -83,7 +66,7 @@ export const TopBar: React.FC<TopBarProps> = ({
           <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-[#00695C] rounded-full" />
         </button>
 
-        {/* Platform Staff User Menu & Role Switcher */}
+        {/* Platform Staff User Menu */}
         <div className="relative">
           <button
             onClick={() => setProfileDropdownOpen(!profileDropdownOpen)}
@@ -115,71 +98,6 @@ export const TopBar: React.FC<TopBarProps> = ({
                     </span>
                   </div>
                 </div>
-
-                {/* Development-Only Role Switcher - Excluded in Production */}
-                {import.meta.env.DEV && (
-                  <div className="px-3 py-2.5 border-b border-slate-100">
-                    <div className="text-[10px] uppercase font-mono font-bold text-slate-400 mb-2 flex items-center justify-between">
-                      <span>[DEV ONLY] Test RBAC Roles:</span>
-                      {switching && <span className="text-[#00695C] animate-pulse font-sans">Switching...</span>}
-                    </div>
-                    <div className="space-y-1">
-                      <button
-                        onClick={() => handleRoleSwitch('platform_admin')}
-                        disabled={switching}
-                        className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-xl text-left cursor-pointer transition-colors ${
-                          user?.platformRole === 'platform_admin'
-                            ? 'bg-teal-50 text-[#00695C] font-semibold border border-teal-200'
-                            : 'hover:bg-[#F1F5F4] text-slate-700'
-                        }`}
-                      >
-                        <div className="flex items-center gap-2">
-                          <Shield className="w-3.5 h-3.5 text-[#00695C]" />
-                          <span>Platform Admin</span>
-                        </div>
-                        {user?.platformRole === 'platform_admin' && (
-                          <CheckCircle2 className="w-3.5 h-3.5 text-[#00695C]" />
-                        )}
-                      </button>
-
-                      <button
-                        onClick={() => handleRoleSwitch('platform_support')}
-                        disabled={switching}
-                        className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-xl text-left cursor-pointer transition-colors ${
-                          user?.platformRole === 'platform_support'
-                            ? 'bg-teal-50 text-[#00695C] font-semibold border border-teal-200'
-                            : 'hover:bg-[#F1F5F4] text-slate-700'
-                        }`}
-                      >
-                        <div className="flex items-center gap-2">
-                          <UserCheck className="w-3.5 h-3.5 text-[#00695C]" />
-                          <span>Platform Support</span>
-                        </div>
-                        {user?.platformRole === 'platform_support' && (
-                          <CheckCircle2 className="w-3.5 h-3.5 text-[#00695C]" />
-                        )}
-                      </button>
-
-                      <button
-                        onClick={() => handleRoleSwitch('platform_security')}
-                        disabled={switching}
-                        className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-xl text-left cursor-pointer transition-colors ${
-                          user?.platformRole === 'platform_security'
-                            ? 'bg-teal-50 text-[#00695C] font-semibold border border-teal-200'
-                            : 'hover:bg-[#F1F5F4] text-slate-700'
-                        }`}
-                      >
-                        <div className="flex items-center gap-2">
-                          <Activity className="w-3.5 h-3.5 text-[#00695C]" />
-                          <span>Platform Security</span>
-                        </div>
-                        {user?.platformRole === 'platform_security' && (
-                          <CheckCircle2 className="w-3.5 h-3.5 text-[#00695C]" />
-                        )}
-                      </button>
-                    </div>
-                  </div>
-                )}
 
                 <div className="p-1.5">
                   <button

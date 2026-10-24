@@ -122,7 +122,16 @@ REFRESH_TOKEN_SECRET="replace-with-ultra-secure-min-32-char-refresh-secret-key"
 
 PORT=3000
 NODE_ENV="development"
-ALLOW_PRODUCTION_SEED="false"
+
+# Standalone development credentials (required when DATABASE_URL is unset in development)
+DEV_ADMIN_PASSWORD="replace-with-local-dev-admin-password"
+DEV_SUPPORT_PASSWORD="replace-with-local-dev-support-password"
+DEV_SECURITY_PASSWORD="replace-with-local-dev-security-password"
+
+# Non-production database seeding bootstrap passwords
+SEED_ADMIN_PASSWORD="replace-with-seed-admin-password"
+SEED_SUPPORT_PASSWORD="replace-with-seed-support-password"
+SEED_SECURITY_PASSWORD="replace-with-seed-security-password"
 ```
 
 ### 2. Database Migrations & Schema Synchronization:
@@ -141,10 +150,11 @@ Central CRM uses PostgreSQL with Drizzle ORM (`drizzle-kit`). All migration comm
   npm run db:migrate
   ```
 
-### 3. Explicit Development Seeding:
-Central CRM never runs seed scripts automatically in production. To seed baseline staff, permissions catalog, and sample development tenants:
+### 3. Non-Production Development Seeding:
+Central CRM strictly blocks database seeding in production (`NODE_ENV=production`) under all circumstances. To seed baseline staff, permissions catalog, and sample development tenants in non-production environments:
 * Via API: Call `POST /api/platform/system/seed` (requires `platform:staff:manage` permission).
-* In production, seeding is blocked by default unless `ALLOW_PRODUCTION_SEED=true` is explicitly set in the environment.
+* Requires distinct, explicit bootstrap passwords configured via `SEED_ADMIN_PASSWORD`, `SEED_SUPPORT_PASSWORD`, and `SEED_SECURITY_PASSWORD`.
+* Production database seeding is unconditionally forbidden. Production staff provisioning is separate and strictly managed.
 
 ### 4. Start Development Server:
 ```bash
@@ -164,10 +174,12 @@ npm run build
 
 ---
 
-## 6. Default Evaluation Staff Credentials
+## 6. Development Platform Staff Identities
 
-When evaluated in development mode, the following platform identities are pre-configured:
+In development mode, distinct platform staff identities are available:
 
-* **Platform Admin**: `admin@dialpulse.internal` / `CentralPlatform2026!`
-* **Platform Support**: `support@dialpulse.internal` / `CentralPlatform2026!`
-* **Platform Security**: `security@dialpulse.internal` / `CentralPlatform2026!`
+* **Platform Admin**: `admin@dialpulse.internal` (authenticated via `DEV_ADMIN_PASSWORD` or database bootstrap credential)
+* **Platform Support**: `support@dialpulse.internal` (authenticated via `DEV_SUPPORT_PASSWORD` or database bootstrap credential)
+* **Platform Security**: `security@dialpulse.internal` (authenticated via `DEV_SECURITY_PASSWORD` or database bootstrap credential)
+
+There are **no default or shared passwords**. Each environment must explicitly configure distinct credentials. Standalone authentication is disabled if credentials are not configured or if running in production.
