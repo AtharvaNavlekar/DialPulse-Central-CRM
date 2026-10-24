@@ -14,8 +14,19 @@ export interface ServerConfig {
 let cachedConfig: ServerConfig | null = null;
 
 /**
+ * Known development default and placeholder secret patterns.
+ * These must never be accepted in production environments.
+ */
+const DEV_SECRET_PATTERNS: readonly string[] = [
+  'dialpulse-central-crm-jwt-secret-key',
+  'dialpulse-central-crm-refresh-secret-key',
+  'replace-with-ultra-secure-min-32-char-platform-secret',
+  'replace-with-ultra-secure-min-32-char-refresh-secret',
+];
+
+/**
  * Validates environment variables according to strict platform security rules.
- * Fails fast and clearly when required secrets are missing.
+ * Fails fast and clearly when required secrets are missing or are known dev defaults.
  * Never outputs secret values in error messages.
  */
 export function validateEnv(customEnv?: Record<string, string | undefined>): ServerConfig {
@@ -42,9 +53,26 @@ export function validateEnv(customEnv?: Record<string, string | undefined>): Ser
   const nodeEnv: 'development' | 'production' | 'test' =
     nodeEnvRaw === 'production' ? 'production' : nodeEnvRaw === 'test' ? 'test' : 'development';
 
+  // 3. Production guard: reject known development default / placeholder secrets.
+  //    Development accounts must not be usable in production deployments.
+  if (nodeEnv === 'production') {
+    if (jwtSecret && DEV_SECRET_PATTERNS.some((p) => jwtSecret.startsWith(p))) {
+      errors.push(
+        'JWT_SECRET contains a known development default value and MUST NOT be used in production. ' +
+        'Generate a unique cryptographically random secret (e.g. openssl rand -hex 32) for production deployments.'
+      );
+    }
+    if (refreshSecret && DEV_SECRET_PATTERNS.some((p) => refreshSecret.startsWith(p))) {
+      errors.push(
+        'REFRESH_TOKEN_SECRET contains a known development default value and MUST NOT be used in production. ' +
+        'Generate a unique cryptographically random secret (e.g. openssl rand -hex 32) for production deployments.'
+      );
+    }
+  }
+
   const databaseUrl = env.DATABASE_URL?.trim();
 
-  // 3. Database URL rules
+  // 4. Database URL rules
   if (nodeEnv === 'production' && !databaseUrl) {
     errors.push('DATABASE_URL is required in production environment.');
   }

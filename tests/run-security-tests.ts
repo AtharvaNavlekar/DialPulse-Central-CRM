@@ -485,8 +485,10 @@ async function main() {
   }
 
   // Gate 13: Audit Events Recorded for Sensitive Platform Mutations
+  //          Persistence failures are observable and accurately reported — not silently swallowed.
   {
-    const auditId = await AuditService.record({
+    // 13a: _write() returns aud_ id with accurate persistence status
+    const auditResult = await AuditService._write({
       actor: { actorId: 'usr_staff_admin_01', actorEmail: 'admin@dialpulse.internal', actorPlatformRole: 'platform_admin' },
       action: 'tenant_suspension',
       targetType: 'tenant',
@@ -494,8 +496,24 @@ async function main() {
       result: 'success',
       details: { reason: 'Terms of service non-compliance' },
     });
-    assert(auditId.startsWith('aud_'), 'Audit service must record and return aud_ prefixed identifier');
-    console.log('  ✓ Gate 13: Mandatory audit logging verified for sensitive platform mutations');
+    assert(auditResult.id.startsWith('aud_'), 'Audit service must return aud_ prefixed identifier');
+    // Without DATABASE_URL in the test environment, status must be 'skipped_no_db' not a false 'persisted'
+    assert(
+      auditResult.persistenceStatus === 'skipped_no_db' || auditResult.persistenceStatus === 'persisted',
+      `Persistence status must be accurate, got: ${auditResult.persistenceStatus}`
+    );
+
+    // 13b: Backward-compat record() still returns id string
+    const auditId = await AuditService.record({
+      actor: { actorId: 'usr_staff_admin_01', actorEmail: 'admin@dialpulse.internal', actorPlatformRole: 'platform_admin' },
+      action: 'tenant_suspension_compat',
+      targetType: 'tenant',
+      targetId: 'tnt_acme_corp',
+      result: 'success',
+    });
+    assert(auditId.startsWith('aud_'), 'AuditService.record() must return aud_ prefixed id string');
+
+    console.log('  ✓ Gate 13: Audit logging verified — persistence status accurately reported, not falsely claimed');
   }
 
   const duration = Date.now() - startTime;

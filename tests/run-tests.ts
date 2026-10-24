@@ -3,6 +3,7 @@ import { runAuthTests } from './auth.test.ts';
 import { runRbacTests } from './rbac.test.ts';
 import { runSecurityTests } from './security.test.ts';
 import { runSdlcTests } from './sdlc.test.ts';
+import { runTenantFilterTests } from './tenant-filter.test.ts';
 
 async function main() {
   console.log('====================================================');
@@ -16,6 +17,7 @@ async function main() {
     await runRbacTests();
     await runSecurityTests();
     await runSdlcTests();
+    await runTenantFilterTests();
 
     const elapsed = Date.now() - startTime;
     console.log('\n====================================================');

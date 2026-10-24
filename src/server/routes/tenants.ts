@@ -5,7 +5,7 @@ import { requirePlatformPermission } from '../middleware/authorize.ts';
 import { PLATFORM_PERMISSIONS } from '../policies/permissions.ts';
 import { getDb, isDatabaseConfigured } from '../db/index.ts';
 import { tenants } from '../db/schema.ts';
-import { eq, ilike, or, desc, asc } from 'drizzle-orm';
+import { eq, ilike, or, and, desc, asc } from 'drizzle-orm';
 import { AuditService } from '../audit/service.ts';
 
 const router = Router();
@@ -60,7 +60,7 @@ router.get(
       }
 
       const rows = conditions.length > 0
-        ? await query.where(conditions.length === 1 ? conditions[0] : (conditions[0], conditions[1]))
+        ? await query.where(conditions.length === 1 ? conditions[0] : and(...conditions))
         : await query;
 
       // In-memory sorting for stability

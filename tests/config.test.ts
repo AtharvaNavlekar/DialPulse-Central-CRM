@@ -177,4 +177,54 @@ export async function runConfigTests() {
     }
     console.log('  ✓ Test F: Development seed remains explicit and blocked in production');
   }
+
+  // Test G: Development default secrets are rejected in production
+  {
+    const validSecret32 = '0123456789abcdef0123456789abcdef';
+
+    // The .env file ships these exact hardcoded dev secrets — must be blocked in production
+    const devJwtSecret = 'dialpulse-central-crm-jwt-secret-key-32chars-minimum-prod';
+    const devRefreshSecret = 'dialpulse-central-crm-refresh-secret-key-32chars-minimum-prod';
+
+    let rejectedJwt = false;
+    let jwtErrMsg = '';
+    try {
+      validateEnv({
+        JWT_SECRET: devJwtSecret,
+        REFRESH_TOKEN_SECRET: validSecret32,
+        NODE_ENV: 'production',
+        DATABASE_URL: 'postgresql://host/db',
+      });
+    } catch (err: any) {
+      rejectedJwt = true;
+      jwtErrMsg = err.message;
+    }
+    assert.strictEqual(rejectedJwt, true, 'Test G: Default dev JWT_SECRET must be rejected in production');
+    assert(jwtErrMsg.includes('known development default'), 'Test G: Error must name the known dev default');
+
+    let rejectedRefresh = false;
+    try {
+      validateEnv({
+        JWT_SECRET: validSecret32,
+        REFRESH_TOKEN_SECRET: devRefreshSecret,
+        NODE_ENV: 'production',
+        DATABASE_URL: 'postgresql://host/db',
+      });
+    } catch {
+      rejectedRefresh = true;
+    }
+    assert.strictEqual(rejectedRefresh, true, 'Test G: Default dev REFRESH_TOKEN_SECRET must be rejected in production');
+
+    // Confirm the same secrets ARE accepted in development
+    let devAccepted = false;
+    try {
+      validateEnv({ JWT_SECRET: devJwtSecret, REFRESH_TOKEN_SECRET: devRefreshSecret, NODE_ENV: 'development' });
+      devAccepted = true;
+    } catch {
+      devAccepted = false;
+    }
+    assert.strictEqual(devAccepted, true, 'Test G: Dev default secrets must remain usable in development mode');
+
+    console.log('  \u2713 Test G: Development default credentials rejected in production, accepted in development');
+  }
 }

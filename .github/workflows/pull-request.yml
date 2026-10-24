@@ -21,8 +21,9 @@ jobs:
         with:
           node-version: 22
           cache: 'npm'
+          cache-dependency-path: package-lock.json
 
-      - name: 3. Install Dependencies
+      - name: 3. Install Dependencies (locked)
         run: npm ci
 
       - name: 4. SDLC PR & Lifecycle Gate
