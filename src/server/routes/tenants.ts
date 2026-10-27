@@ -1,6 +1,6 @@
 import { Router, Response } from 'express';
 import { ExtendedRequest } from '../middleware/request-context.ts';
-import { requirePlatformAuth } from '../middleware/auth.ts';
+import { requirePlatformAuth, requireRecentMfa } from '../middleware/auth.ts';
 import { requirePlatformPermission } from '../middleware/authorize.ts';
 import { PLATFORM_PERMISSIONS } from '../policies/permissions.ts';
 import { getDb, isDatabaseConfigured } from '../db/index.ts';
@@ -131,6 +131,7 @@ router.post(
   '/',
   requirePlatformAuth,
   requirePlatformPermission(PLATFORM_PERMISSIONS.TENANTS_CREATE),
+  requireRecentMfa,
   async (req: ExtendedRequest, res: Response) => {
     const { name, slug, ownerEmail, plan, region, contactName, phone, maxUsers } = req.body || {};
 
@@ -204,6 +205,7 @@ router.post(
   '/:id/suspend',
   requirePlatformAuth,
   requirePlatformPermission(PLATFORM_PERMISSIONS.TENANTS_SUSPEND),
+  requireRecentMfa,
   async (req: ExtendedRequest, res: Response) => {
     const tenantId = req.params.id;
     const { reason } = req.body || {};
@@ -267,6 +269,7 @@ router.post(
   '/:id/reactivate',
   requirePlatformAuth,
   requirePlatformPermission(PLATFORM_PERMISSIONS.TENANTS_REACTIVATE),
+  requireRecentMfa,
   async (req: ExtendedRequest, res: Response) => {
     const tenantId = req.params.id;
 
