@@ -119,10 +119,62 @@ async function main() {
         () => runDatabaseMigration({ clientOrPool: client, migrationsFolder, logger: log() }),
         /MIGRATION_HISTORY_HASH_MISMATCH/
       );
+
+      // Recorded timestamps must be a contiguous prefix of the committed journal.
+      await client.query(
+        'UPDATE "drizzle"."__drizzle_migrations" SET hash = $1 WHERE created_at = $2',
+        [migrations[1].hash, migrations[1].when]
+      );
+      await client.query(
+        'DELETE FROM "drizzle"."__drizzle_migrations" WHERE created_at = $1',
+        [migrations[1].when]
+      );
+      await assert.rejects(
+        () => runDatabaseMigration({ clientOrPool: client, migrationsFolder, logger: log() }),
+        /MIGRATION_HISTORY_ORDER_INVALID/
+      );
     });
     console.log('  ✓ Existing-schema adoption preserves data, applies additive migrations, is idempotent, and rejects tampered migration history.');
 
-    // C. A partial/unrelated public schema must fail safely without replaying CREATE TABLE.
+    // C. A schema missing an expected unique constraint must not be adopted.
+    const missingUnique = await createDatabase('missing_unique');
+    await withClient(missingUnique.pool, async (client) => {
+      await client.query('BEGIN');
+      try {
+        for (const statement of migrations[0].statements) await client.query(statement);
+        await client.query('COMMIT');
+      } catch (error) {
+        await client.query('ROLLBACK');
+        throw error;
+      }
+
+      const uniqueConstraint = await client.query(`
+        SELECT tc.constraint_name
+        FROM information_schema.table_constraints tc
+        JOIN information_schema.key_column_usage kcu
+          ON tc.constraint_name = kcu.constraint_name
+          AND tc.table_schema = kcu.table_schema
+          AND tc.table_name = kcu.table_name
+        WHERE tc.table_schema = 'public'
+          AND tc.table_name = 'platform_users'
+          AND tc.constraint_type = 'UNIQUE'
+          AND kcu.column_name = 'email'
+        GROUP BY tc.constraint_name
+        HAVING COUNT(*) = 1;
+      `);
+      assert.equal(uniqueConstraint.rowCount, 1, 'Baseline should include platform_users.email unique constraint');
+      await client.query('ALTER TABLE platform_users DROP CONSTRAINT "' + String(uniqueConstraint.rows[0].constraint_name).replace(/"/g, '""') + '"');
+
+      await assert.rejects(
+        () => runDatabaseMigration({ clientOrPool: client, migrationsFolder, logger: log() }),
+        /SCHEMA_INCOMPATIBLE.*unique constraint/i
+      );
+      const recorded = await getAppliedMigrations(client);
+      assert.equal(recorded.length, 0, 'Incompatible schema must not be baselined');
+    });
+    console.log('  ✓ Existing schema missing a required unique constraint fails closed without being baselined.');
+
+    // C2. A partial/unrelated public schema must fail safely without replaying CREATE TABLE.
     const incompatible = await createDatabase('incompatible');
     await withClient(incompatible.pool, async (client) => {
       await client.query('CREATE TABLE platform_users (id text PRIMARY KEY)');

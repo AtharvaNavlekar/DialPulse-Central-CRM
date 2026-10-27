@@ -32,6 +32,7 @@ import {
   EXPECTED_REQUIRED_COLUMNS,
   EXPECTED_BASELINE_PRIMARY_KEYS,
   EXPECTED_BASELINE_FOREIGN_KEYS,
+  EXPECTED_BASELINE_UNIQUE_COLUMNS,
 } from '../src/server/db/migrator.ts';
 import { ApiClient } from '../src/app/api.ts';
 
@@ -1412,6 +1413,7 @@ export async function runSessionLifecycleTests() {
         public columns: Map<string, Set<string>> = new Map();
         public primaryKeys: Array<{ table_name: string; column_name: string; ordinal_position: number }> = [];
         public foreignKeys: Array<{ table_name: string; column_name: string; foreign_table_name: string; foreign_column_name: string }> = [];
+        public uniqueConstraints: Array<{ table_name: string; constraint_name: string; column_name: string; key_column_count: number }> = [];
         public migrationsTable: Array<{ id: number; hash: string; created_at: number }> = [];
         public userData: Map<string, any> = new Map();
         public inTransaction: boolean = false;
@@ -1438,6 +1440,10 @@ export async function runSessionLifecycleTests() {
 
           if (trimmed.includes('information_schema.table_constraints') && trimmed.includes("constraint_type = 'FOREIGN KEY'")) {
             return { rows: [...this.foreignKeys] };
+          }
+
+          if (trimmed.includes('information_schema.table_constraints') && trimmed.includes("constraint_type = 'UNIQUE'")) {
+            return { rows: [...this.uniqueConstraints] };
           }
 
           if (trimmed.includes('information_schema.tables')) {
@@ -1544,6 +1550,12 @@ export async function runSessionLifecycleTests() {
         column_name: fk.column,
         foreign_table_name: fk.refTable,
         foreign_column_name: fk.refColumn,
+      }));
+      existingClient.uniqueConstraints = EXPECTED_BASELINE_UNIQUE_COLUMNS.map((unique) => ({
+        table_name: unique.table,
+        constraint_name: unique.table + '_' + unique.column + '_unique',
+        column_name: unique.column,
+        key_column_count: 1,
       }));
       // Add existing production user data
       existingClient.userData.set('usr_prod_admin', { email: 'admin@prod.com', full_name: 'Prod Admin' });

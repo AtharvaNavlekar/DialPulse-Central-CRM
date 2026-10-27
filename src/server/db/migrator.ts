@@ -22,6 +22,7 @@ export interface SchemaValidationResult {
   missingColumns: string[];
   missingPrimaryKeys: string[];
   missingForeignKeys: string[];
+  missingUniqueConstraints: string[];
 }
 
 export interface MigrationResult {
@@ -103,6 +104,13 @@ export const EXPECTED_BASELINE_PRIMARY_KEYS: Record<string, string[]> = {
   tenants: ['id'],
 };
 
+export const EXPECTED_BASELINE_UNIQUE_COLUMNS = [
+  { table: 'billing_records', column: 'invoice_number' },
+  { table: 'feature_flags', column: 'key' },
+  { table: 'platform_users', column: 'email' },
+  { table: 'tenants', column: 'slug' },
+] as const;
+
 export const EXPECTED_BASELINE_FOREIGN_KEYS = [
   { table: 'billing_records', column: 'tenant_id', refTable: 'tenants', refColumn: 'id' },
   { table: 'impersonation_sessions', column: 'staff_user_id', refTable: 'platform_users', refColumn: 'id' },
@@ -164,6 +172,25 @@ export async function validateSchemaCompatibility(clientOrPool: any): Promise<Sc
     }
   }
 
+  const uniqueRes = await clientOrPool.query(`
+    SELECT tc.table_name, tc.constraint_name, kcu.column_name,
+           COUNT(*) OVER (PARTITION BY tc.table_name, tc.constraint_name) AS key_column_count
+    FROM information_schema.table_constraints tc
+    JOIN information_schema.key_column_usage kcu
+      ON tc.constraint_name = kcu.constraint_name
+      AND tc.table_schema = kcu.table_schema
+      AND tc.table_name = kcu.table_name
+    WHERE tc.table_schema = 'public' AND tc.constraint_type = 'UNIQUE';
+  `);
+  const actualUniqueColumns = new Set<string>(
+    (uniqueRes.rows || [])
+      .filter((row: any) => Number(row.key_column_count) === 1)
+      .map((row: any) => String(row.table_name) + '.' + String(row.column_name))
+  );
+  const missingUniqueConstraints = EXPECTED_BASELINE_UNIQUE_COLUMNS
+    .map((unique) => unique.table + '.' + unique.column)
+    .filter((signature) => !actualUniqueColumns.has(signature));
+
   const fkRes = await clientOrPool.query(`
     SELECT tc.table_name, kcu.column_name,
            ccu.table_name AS foreign_table_name,
@@ -188,11 +215,12 @@ export async function validateSchemaCompatibility(clientOrPool: any): Promise<Sc
 
   return {
     compatible: missingTables.length === 0 && missingColumns.length === 0 &&
-      missingPrimaryKeys.length === 0 && missingForeignKeys.length === 0,
+      missingPrimaryKeys.length === 0 && missingForeignKeys.length === 0 && missingUniqueConstraints.length === 0,
     missingTables,
     missingColumns,
     missingPrimaryKeys,
     missingForeignKeys,
+    missingUniqueConstraints,
   };
 }
 
@@ -262,6 +290,7 @@ function schemaCompatibilityErrors(validation: SchemaValidationResult): string[]
     ...validation.missingColumns.map((c) => 'missing column "' + c + '"'),
     ...validation.missingPrimaryKeys.map((k) => 'primary-key mismatch: ' + k),
     ...validation.missingForeignKeys.map((k) => 'missing foreign key: ' + k),
+    ...validation.missingUniqueConstraints.map((k) => 'missing single-column unique constraint: ' + k),
   ];
 }
 
@@ -326,6 +355,14 @@ export async function runDatabaseMigration(options: {
   }
 
   const appliedTimestamps = new Set<number>(applied.map((record) => record.created_at));
+  const expectedHistoryPrefix = migrations.slice(0, applied.length).map((migration) => migration.when);
+  const actualHistory = applied.map((record) => record.created_at);
+  if (
+    applied.length > migrations.length ||
+    actualHistory.some((timestamp, index) => timestamp !== expectedHistoryPrefix[index])
+  ) {
+    throw new Error('MIGRATION_HISTORY_ORDER_INVALID: Applied migrations are not a contiguous prefix of the current journal. Inspect history before applying more migrations.');
+  }
   const baseline = migrations[0];
   const hasBaselineRecorded = appliedTimestamps.has(baseline.when);
 
