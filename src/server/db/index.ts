@@ -2,6 +2,7 @@ import { drizzle } from 'drizzle-orm/node-postgres';
 import pg from 'pg';
 const { Pool } = pg;
 import * as schema from './schema.ts';
+import { getPostgresTlsOptions } from './tls.ts';
 import { getValidatedConfig } from '../config/env.ts';
 
 declare global {
@@ -37,7 +38,7 @@ export function getPool(): pg.Pool | null {
       max: 10,
       connectionTimeoutMillis: 5000,
       idleTimeoutMillis: 30000,
-      ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : undefined,
+      ssl: getPostgresTlsOptions(),
     });
 
     global._centralCrmPool.on('error', (err) => {

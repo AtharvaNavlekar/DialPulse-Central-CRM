@@ -27,11 +27,10 @@ export const LoginPage: React.FC = () => {
     }
   };
 
-  const handleSelectEmail = (targetEmail: string, devPassword?: string) => {
+  const handleSelectEmail = (targetEmail: string) => {
+    // Convenience selection only: never prefill a password or expose a credential in frontend code.
     setEmail(targetEmail);
-    if (devPassword) {
-      setPassword(devPassword);
-    }
+    setPassword('');
   };
 
   return (
@@ -77,16 +76,16 @@ export const LoginPage: React.FC = () => {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="staff@dialpulse.internal"
-              helperText="Requires authenticated @dialpulse.internal identity"
+              helperText="Requires an active, authorized platform staff identity"
             />
 
             <Input
-              label="Staff Password / SSO Key"
+              label="Staff Password"
               type="password"
               required
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              helperText="Encrypted Argon2/Bcrypt hash verification"
+              helperText="Verified against a server-side password hash"
             />
 
             <Button
@@ -109,7 +108,7 @@ export const LoginPage: React.FC = () => {
             <div className="grid grid-cols-1 gap-1.5">
               <button
                 type="button"
-                onClick={() => handleSelectEmail('admin@dialpulse.internal', 'replace-with-local-dev-admin-password')}
+                onClick={() => handleSelectEmail('admin@dialpulse.internal')}
                 className="w-full py-2 px-3 rounded-xl bg-[#F8FAF9] hover:bg-slate-100 border border-slate-200 text-left flex items-center justify-between text-xs text-slate-800 transition-colors group cursor-pointer"
               >
                 <div>
@@ -121,7 +120,7 @@ export const LoginPage: React.FC = () => {
 
               <button
                 type="button"
-                onClick={() => handleSelectEmail('support@dialpulse.internal', 'replace-with-local-dev-support-password')}
+                onClick={() => handleSelectEmail('support@dialpulse.internal')}
                 className="w-full py-2 px-3 rounded-xl bg-[#F8FAF9] hover:bg-slate-100 border border-slate-200 text-left flex items-center justify-between text-xs text-slate-800 transition-colors group cursor-pointer"
               >
                 <div>
@@ -133,7 +132,7 @@ export const LoginPage: React.FC = () => {
 
               <button
                 type="button"
-                onClick={() => handleSelectEmail('security@dialpulse.internal', 'replace-with-local-dev-security-password')}
+                onClick={() => handleSelectEmail('security@dialpulse.internal')}
                 className="w-full py-2 px-3 rounded-xl bg-[#F8FAF9] hover:bg-slate-100 border border-slate-200 text-left flex items-center justify-between text-xs text-slate-800 transition-colors group cursor-pointer"
               >
                 <div>
@@ -148,7 +147,7 @@ export const LoginPage: React.FC = () => {
 
         {/* Security Compliance Footer */}
         <div className="text-center text-[11px] text-slate-500 font-mono">
-          DialPulse Central CRM · SOC-2 Audited · ISO 27001 Ready
+          DialPulse Central CRM · Privileged Staff Access · Security Hardening in Progress
         </div>
       </div>
     </div>

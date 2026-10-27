@@ -9,6 +9,20 @@ jobs:
   main-verification:
     name: Canonical Verification & Operational Gate
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: central_crm_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d central_crm_ci"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     env:
       NODE_ENV: test
       JWT_SECRET: dialpulse-central-crm-test-jwt-secret-key-32chars-min
@@ -35,7 +49,16 @@ jobs:
         run: npm run test:security
 
       - name: 6. Database Schema Integrity Gate
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/central_crm_ci
         run: npm run verify:db
+
+      - name: 6a. Live PostgreSQL Migration and Adoption Integration
+        env:
+          MIGRATION_TEST_ADMIN_URL: postgresql://postgres:postgres@127.0.0.1:5432/postgres
+          MIGRATION_TEST_ALLOW_DB_CREATE: 'true'
+          NODE_ENV: test
+        run: npm run test:migrations:integration
 
       - name: 7. Operational Readiness Gate
         run: npm run verify:ops

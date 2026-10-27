@@ -1,4 +1,6 @@
 import assert from 'assert';
+import fs from 'node:fs';
+import path from 'node:path';
 import http from 'http';
 import express from 'express';
 import bcrypt from 'bcryptjs';
@@ -427,6 +429,20 @@ export async function runCredentialsTests() {
           !('envVar' in (resBody.user || {})),
           'Internal envVar reference must not be exposed to client'
         );
+
+        // UI security regression: no passwords should be prefilled or certification status invented.
+        const loginPagePath = path.resolve(process.cwd(), 'src/pages/LoginPage.tsx');
+        const loginPageSource = fs.readFileSync(loginPagePath, 'utf8');
+        for (const placeholder of [
+          'replace-with-local-dev-admin-password',
+          'replace-with-local-dev-support-password',
+          'replace-with-local-dev-security-password',
+          'CentralPlatform2026!',
+        ]) {
+          assert(!loginPageSource.includes(placeholder), 'Login page must not contain password placeholders or retired shared credentials');
+        }
+        assert(!loginPageSource.includes('SOC-2 Audited'), 'Do not claim SOC 2 audit without verified evidence');
+        assert(!loginPageSource.includes('ISO 27001 Ready'), 'Do not claim ISO 27001 readiness without verified evidence');
       } finally {
         await new Promise<void>((resolve) => server.close(() => resolve()));
       }

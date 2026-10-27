@@ -1,0 +1,46 @@
+flowchart TB
+    Staff[Platform Admin / Support / Security] --> Console[Central CRM Operator Console]
+    Console --> Gateway[Restricted Admin API Gateway]
+
+    Gateway --> Identity[Platform Identity and Session Service]
+    Identity --> MFA[Real MFA / Passkeys / Step-up]
+    Identity --> SSO[SSO / OIDC Integration Boundary]
+    Gateway --> Policy[Policy Engine / Least Privilege]
+    Policy <--> RBAC[(Authoritative Platform RBAC)]
+    Policy --> Decision{Authorized?}
+    Decision -->|No| Deny[Deny + Security Event]
+    Decision -->|Yes| Ops[Platform Operations API]
+
+    Ops --> Tenant[Provisioning Orchestrator]
+    Ops --> Support[Support / Case Workflow]
+    Ops --> Security[Security Incident Workflow]
+    Ops --> Billing[Billing / Subscriptions]
+    Ops --> Entitlements[Plans / Feature Entitlements]
+    Ops --> Flags[Feature Rollout / Kill Switch]
+    Ops --> Impersonation[Approved Tenant-Scoped Delegation]
+    Ops --> Infra[Infrastructure / Health]
+
+    Tenant --> Registry[(Platform Registry DB)]
+    Billing --> Registry
+    Entitlements --> Registry
+    Flags --> Registry
+    Impersonation --> ClientAPI[Client CRM APIs / Normal Client Policies]
+    Tenant --> TenantStores[(Isolated Tenant Data Plane)]
+
+    Ops --> Verify[Verify Operation Outcome]
+    Verify --> Audit[Durable Tamper-Evident Audit]
+    Audit --> AuditStore[(Restricted Audit Store)]
+    Gateway -. Request traces .-> Obs[Logs / Metrics / Traces / SLOs]
+    Ops -. Service telemetry .-> Obs
+    Security --> Incident[Incident Classification / Escalation / Reporting]
+    Obs --> Incident
+
+    Compliance[Data Inventory / Purpose / Consent / Retention / Rights] --> Registry
+    Compliance --> ClientAPI
+    Docs[Private Document Service / Encryption / Scanning / Temporary Links] --> TenantStores
+    Docs --> Compliance
+
+    Obs --> AI[Permission-Filtered Read-Only AI Copilot]
+    Incident --> AI
+    AI --> Review[Human Review / Approval]
+    Review -. Approved actions return through normal policy .-> Policy

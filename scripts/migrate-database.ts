@@ -1,63 +1,41 @@
 #!/usr/bin/env tsx
 import pg from 'pg';
 import * as dotenv from 'dotenv';
-import path from 'path';
+import path from 'node:path';
 import { runDatabaseMigration } from '../src/server/db/migrator.ts';
+import { getPostgresTlsOptions } from '../src/server/db/tls.ts';
 
 dotenv.config();
 
-/**
- * Automated PostgreSQL Database Migration & Adoption Script
- *
- * Supports:
- * - Brand new empty database (runs full migration sequence)
- * - Existing provisioned database (validates compatibility, baselines 0000, runs 0001/0002)
- * - Idempotent re-runs (no-ops when up to date)
- */
 async function main() {
-  console.log(`====================================================`);
-  console.log(`DIALPULSE CENTRAL CRM — DATABASE MIGRATION RUNNER`);
-  console.log(`====================================================`);
-
   const databaseUrl = process.env.DATABASE_URL?.trim();
-
   if (!databaseUrl) {
-    console.error(`❌ [DATABASE_URL_MISSING]: DATABASE_URL environment variable is required.`);
-    console.error(`   Please configure DATABASE_URL in server environment.`);
-    process.exit(1);
+    throw new Error('[DATABASE_URL_MISSING] DATABASE_URL is required for database migration.');
   }
 
   const pool = new pg.Pool({
     connectionString: databaseUrl,
-    ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : undefined,
+    ssl: getPostgresTlsOptions(),
   });
 
+  let client: pg.PoolClient | undefined;
   try {
-    const client = await pool.connect();
-    try {
-      const migrationsFolder = path.resolve(process.cwd(), 'drizzle');
-      const result = await runDatabaseMigration({
-        clientOrPool: client,
-        migrationsFolder,
-        logger: (msg) => console.log(msg),
-      });
+    client = await pool.connect();
+    const result = await runDatabaseMigration({
+      clientOrPool: client,
+      migrationsFolder: path.resolve(process.cwd(), 'drizzle'),
+      logger: (message) => console.log(message),
+    });
 
-      console.log(`\n✓ [MIGRATION COMPLETE]: Mode = ${result.mode}, Applied: ${result.appliedMigrations.length}`);
-      if (result.appliedMigrations.length > 0) {
-        for (const m of result.appliedMigrations) {
-          console.log(`   - ${m}`);
-        }
-      }
-      process.exit(0);
-    } finally {
-      client.release();
-    }
-  } catch (err: any) {
-    console.error(`\n❌ [MIGRATION FAILED]: ${err.message}`);
-    process.exit(1);
+    console.log('\n✓ [MIGRATION COMPLETE]: Mode = ' + result.mode + ', Applied: ' + result.appliedMigrations.length);
+    for (const migration of result.appliedMigrations) console.log('   - ' + migration);
   } finally {
+    client?.release();
     await pool.end().catch(() => {});
   }
 }
 
-main();
+main().catch((error: any) => {
+  console.error('\n✗ [MIGRATION FAILED]: ' + (error?.message || 'Unknown migration failure'));
+  process.exitCode = 1;
+});

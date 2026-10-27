@@ -43,8 +43,33 @@ export const PROJECT_SUBSYSTEM_STATUS: SubsystemStatus[] = [
   },
   {
     subsystem: 'Platform Audit Logging',
-    status: 'REAL',
-    notes: 'Structured audit events recorded for unauthorized attempts, sensitive mutations, and tenant actions.',
+    status: 'PARTIAL',
+    notes: 'Structured audit events and PostgreSQL persistence exist, but append-only/tamper-evident integrity and uniform durable-audit enforcement are not complete.',
+  },
+  {
+    subsystem: 'Platform MFA & Step-up Authentication',
+    status: 'MISSING',
+    notes: 'No real server-enforced MFA challenge, passkey registration, or step-up verification flow is implemented yet.',
+  },
+  {
+    subsystem: 'India Data Protection Readiness',
+    status: 'PARTIAL',
+    notes: 'Architecture, roadmap and technical control status are registered. Data inventory, purpose/consent, rights, retention, vendor and incident-reporting workflows remain unimplemented; this is not a compliance certification.',
+  },
+  {
+    subsystem: 'Incident Response & Regulatory Reporting',
+    status: 'MISSING',
+    notes: 'Security-event records exist, but named incident ownership, clock/escalation workflow and applicable CERT-In reporting evidence are not implemented.',
+  },
+  {
+    subsystem: 'Sensitive Document Security & Retention',
+    status: 'MISSING',
+    notes: 'No Central CRM document service, record-specific retention engine or legal-hold workflow is implemented; ownership must be agreed with Client CRM/data services.',
+  },
+  {
+    subsystem: 'Platform Observability',
+    status: 'PARTIAL',
+    notes: 'Health checks and structured logging exist; correlated OpenTelemetry traces, metrics, SLOs and alerts are not implemented.',
   },
   {
     subsystem: 'Supervised Impersonation Workflow',

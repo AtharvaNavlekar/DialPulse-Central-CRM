@@ -1,0 +1,24 @@
+flowchart TD
+    Staff[Authorized Platform Staff] --> UI[React / Vite Central CRM]
+    UI --> API[Express API Gateway]
+    API --> Auth[JWT Signature + HTTP-only Cookie Session]
+    Auth --> Identity[(PostgreSQL platform_users / platform_sessions)]
+    Auth --> Policy[Server-side Platform Authorization]
+    Policy --> RBAC[(PostgreSQL role_permissions + permissions)]
+    Policy --> Routes[Protected Platform Routes]
+    Routes --> Tenants[Tenant Lifecycle API]
+    Routes --> Security[Security / SOC Events]
+    Routes --> Audit[Audit Service]
+    Routes --> Impersonation[Impersonation Request Boundary]
+    Routes --> System[Health / System Controls]
+    Tenants --> PlatformDB[(PostgreSQL Platform Registry)]
+    Security --> PlatformDB
+    Audit --> PlatformDB
+    Impersonation --> PlatformDB
+    API -. Basic request / error telemetry .-> ConsoleLogs[Application Logs / Health Probes]
+    Audit -. Structured event .-> ConsoleLogs
+
+    classDef implemented fill:#D1FAE5,stroke:#059669,color:#064E3B
+    classDef partial fill:#FEF3C7,stroke:#D97706,color:#78350F
+    class Staff,UI,API,Auth,Identity,Policy,RBAC,Routes,Tenants,Security,System,PlatformDB implemented
+    class Audit,Impersonation,ConsoleLogs partial

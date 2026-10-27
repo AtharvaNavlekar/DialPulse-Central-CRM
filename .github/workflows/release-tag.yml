@@ -9,6 +9,24 @@ jobs:
   release-verification:
     name: Production Release Gate & Artifact Generation
     runs-on: ubuntu-latest
+    env:
+      NODE_ENV: test
+      JWT_SECRET: dialpulse-central-crm-test-jwt-secret-key-32chars-min
+      REFRESH_TOKEN_SECRET: dialpulse-central-crm-test-refresh-secret-32chars-min
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: central_crm_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d central_crm_ci"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
 
     steps:
       - name: 1. Checkout Repository
@@ -19,6 +37,7 @@ jobs:
         with:
           node-version: 22
           cache: 'npm'
+          cache-dependency-path: package-lock.json
 
       - name: 3. Install Dependencies
         run: npm ci
@@ -28,6 +47,13 @@ jobs:
 
       - name: 5. 10-Point Release Gate Verification
         run: npm run verify:release
+
+      - name: 5a. Live PostgreSQL Migration and Adoption Integration
+        env:
+          MIGRATION_TEST_ADMIN_URL: postgresql://postgres:postgres@127.0.0.1:5432/postgres
+          MIGRATION_TEST_ALLOW_DB_CREATE: 'true'
+          NODE_ENV: test
+        run: npm run test:migrations:integration
 
       - name: 6. Production Build
         run: npm run build

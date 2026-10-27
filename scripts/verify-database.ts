@@ -28,6 +28,27 @@ async function main() {
 
   let failures = 0;
 
+  // 0. Verify live PostgreSQL migration integration coverage is present and runnable.
+  const migrationIntegrationTestPath = path.resolve(process.cwd(), 'tests/migration-integration.test.ts');
+  const packageJsonPath = path.resolve(process.cwd(), 'package.json');
+  if (!fs.existsSync(migrationIntegrationTestPath)) {
+    console.error('❌ Live PostgreSQL migration integration test not found.');
+    failures++;
+  } else {
+    try {
+      const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf-8'));
+      if (!packageJson.scripts?.['test:migrations:integration']) {
+        console.error('❌ package.json is missing test:migrations:integration.');
+        failures++;
+      } else {
+        console.log('  ✓ Live PostgreSQL migration integration test is wired to npm scripts.');
+      }
+    } catch (err: any) {
+      console.error('❌ Could not validate migration integration script: ' + err.message);
+      failures++;
+    }
+  }
+
   // 1. Verify drizzle.config.ts exists
   const drizzleConfigPath = path.resolve(process.cwd(), 'drizzle.config.ts');
   if (!fs.existsSync(drizzleConfigPath)) {

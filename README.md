@@ -11,7 +11,7 @@ DialPulse Central CRM is a standalone, privileged internal operations applicatio
 ### What Central CRM OWNS:
 * **Platform Overview**: System observability, PostgreSQL connectivity, node metrics, tenant counters.
 * **Tenant Management**: Tenant provisioning, status lifecycle (active, suspended, provisioning), tier assignment, and inspection.
-* **Global Audit Trail**: Immutable, server-side recorded actions with actor identity, target, timestamp, result, and context.
+* **Global Audit Trail**: Server-side recorded actions with actor identity, target, timestamp, result, and context. Tamper-evident/append-only storage and end-to-end durable-audit guarantees remain planned.
 * **Security & SOC**: Platform-level threat monitoring, SIP trunk anomaly tracking, and incident resolution.
 * **Platform Authorization & Staff RBAC**: Granular permissions, platform staff directory, and privilege enforcement.
 * **Supervised Impersonation**: High-privilege, audit-supervised diagnostics workflow with strict authorization boundaries.
@@ -57,7 +57,7 @@ Tenant roles (`owner`, `cto`, `it`, `tl_head`, `tl`, `telecaller`) are strictly 
 * **Frontend**: React 19, TypeScript, Vite, Tailwind CSS v4, Material Design 3 inspired enterprise theme.
 * **Backend**: Node.js, Express, TypeScript (`tsx`).
 * **Database & ORM**: PostgreSQL, Drizzle ORM (`drizzle-kit`), connection pooling via `pg.Pool`.
-* **Authentication**: JWT access tokens (15m expiry), SHA-256 hashed refresh tokens stored in PostgreSQL `platform_sessions`, server-side session validation.
+* **Authentication**: Short-lived access tokens and rotating refresh tokens in HTTP-only cookies, hashed refresh-token persistence in PostgreSQL, server-side session validation, CSRF/origin checks and bounded replay detection. MFA, passkeys, step-up and SSO remain unimplemented.
 
 ```
 /
@@ -88,19 +88,31 @@ Tenant roles (`owner`, `cto`, `it`, `tl_head`, `tl`, `telecaller`) are strictly 
 
 | Subsystem | Status | Description |
 | :--- | :--- | :--- |
-| **Application & Shell** | `REAL` | Material Design 3 shell, responsive desktop layout, breadcrumbs. |
-| **Authentication & Sessions** | `REAL` | Access tokens, refresh tokens, session revocation, staff login. |
-| **Platform RBAC** | `REAL` | Granular permission middleware, role checks, tenant isolation. |
-| **Database Foundation** | `REAL` | PostgreSQL schema defined in Drizzle with lazy connection pooling. |
-| **Overview Page** | `REAL` | Live health counters, PostgreSQL connection telemetry, audit stream. |
-| **Tenant Management** | `REAL` | Search, status filters, sorting, inspect, suspend, reactivate, provision. |
-| **Global Audit Trail** | `REAL` | Server-recorded immutable logs with actor, action, result, and payload. |
-| **Security / SOC Alerts** | `REAL` | Anomaly alert queue, severity chips, acknowledgment workflow. |
-| **Supervised Impersonation** | `PARTIAL` | Permission gate & audit log verified; client session handover in Phase 2. |
-| **Billing & Subscriptions** | `NOT IMPLEMENTED` | Schema defined; automated recurring invoicing planned for Phase 2. |
-| **Feature Flags Operations** | `NOT IMPLEMENTED` | Schema defined; canary rollout engine planned for Phase 2. |
-| **Infrastructure Controls** | `NOT IMPLEMENTED` | Probes active; cluster scaling controls planned for Phase 2. |
-| **Advanced Telemetry** | `NOT IMPLEMENTED` | Time-series streaming engine planned for Phase 2. |
+| **Application & Shell** | `REAL` | React/Vite operator shell and white/light design system. |
+| **Authentication & Sessions** | `PARTIAL` | Cookie-only sessions, rotation/replay controls and server-side validation; real MFA, step-up and SSO are not implemented. |
+| **Platform RBAC** | `REAL` | Runtime role-permission mappings are loaded from PostgreSQL and checked server-side; JIT approval workflow remains planned. |
+| **Database Foundation & Migrations** | `PARTIAL` | PostgreSQL/Drizzle schema, versioned migrations and safe-adoption runner; live migration coverage is being added to CI. |
+| **Overview Page / Health** | `PARTIAL` | Health and database checks exist; full correlated logs/metrics/traces and SLOs are not implemented. |
+| **Tenant Management** | `PARTIAL` | Database-backed lifecycle endpoints and filters exist; end-to-end tenant provisioning and data-plane isolation are not verified. |
+| **Global Audit Trail** | `PARTIAL` | PostgreSQL audit persistence and structured events exist; append-only/tamper-evident integrity and uniform failure enforcement are not complete. |
+| **Security / SOC Alerts** | `PARTIAL` | Security event queue and resolution flow exist; formal incident ownership and regulatory reporting workflow are not implemented. |
+| **Supervised Impersonation** | `PARTIAL` | Request boundary and audit logic exist; complete approved, short-lived client-session delegation is not implemented. |
+| **India Data Protection Readiness** | `PARTIAL` | Compliance status and roadmap are documented; inventory, consent/rights workflows, retention and supplier controls are not implemented. This is not a compliance certification. |
+| **Sensitive Document Service** | `NOT IMPLEMENTED` | Central CRM does not implement private KYC/financial/property document storage. Define ownership and secure integration before adding it. |
+| **Billing & Subscriptions** | `NOT IMPLEMENTED` | Schema exists; production billing and entitlement workflows are not implemented. |
+| **Feature Rollouts / Kill Switch** | `NOT IMPLEMENTED` | Schema exists; governed canary rollout and entitlement integration are not implemented. |
+| **Infrastructure Controls** | `NOT IMPLEMENTED` | Health probes exist; infrastructure mutation and orchestration are not implemented. |
+| **AI Operations Copilot** | `NOT IMPLEMENTED` | Future read-only, permission-filtered recommendations after policy and data controls mature. |
+
+---
+
+## Architecture, Roadmap & Compliance Readiness
+
+- [Target and current architecture](docs/ARCHITECTURE.md)
+- [Implementation roadmap](docs/ROADMAP.md)
+- [India data-protection compliance status and control matrix](docs/COMPLIANCE_STATUS.md)
+
+These are readiness records, not a legal compliance attestation. Applicability must be confirmed against DialPulse’s actual legal role, customer contracts and data flows.
 
 ---
 
@@ -137,7 +149,7 @@ SEED_SECURITY_PASSWORD="replace-with-seed-security-password"
 ### 2. Database Migrations & Schema Synchronization:
 Central CRM uses PostgreSQL with Drizzle ORM (`drizzle-kit`). All migration commands require `DATABASE_URL` and fail fast if it is missing:
 
-* **Development Schema Push**:
+* **Development-only Schema Push** (do not use as the production migration procedure):
   ```bash
   npm run db:push
   ```
@@ -145,10 +157,17 @@ Central CRM uses PostgreSQL with Drizzle ORM (`drizzle-kit`). All migration comm
   ```bash
   npm run db:generate
   ```
-* **Execute Pending Migrations**:
+* **Execute Pending Migrations / Adopt a compatible existing schema**:
   ```bash
   npm run db:migrate
   ```
+  This project runner validates baseline tables, columns, primary keys and foreign keys before adopting an existing schema; back up the target database and review the result before production use.
+
+* **Live migration integration tests** (requires a disposable PostgreSQL test server and explicit database-creation permission):
+  ```bash
+  npm run test:migrations:integration
+  ```
+  GitHub Actions provisions a temporary PostgreSQL service and runs fresh-install, adoption, idempotency, checksum and incompatible-schema tests.
 
 ### 3. Non-Production Development Seeding:
 Central CRM strictly blocks database seeding in production (`NODE_ENV=production`) under all circumstances. To seed baseline staff, permissions catalog, and sample development tenants in non-production environments:

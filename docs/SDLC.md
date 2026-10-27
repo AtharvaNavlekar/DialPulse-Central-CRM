@@ -179,3 +179,21 @@ Verifies:
 | `npm test` | Main platform test runner |
 | `npm run lint` | TypeScript type-check and code hygiene |
 | `npm run build` | Production Vite asset compilation |
+
+
+## 10. Regulatory & Data Protection SDLC Gate
+
+Any change involving personal, financial, KYC, property, communications, identity or audit data must document:
+- data categories and system of record;
+- legal role and applicability assumptions (controller/data fiduciary, processor/service provider, LSP or regulated entity where relevant);
+- purpose and lawful basis, plus consent/notice/withdrawal requirements where applicable;
+- authorized roles, tenant isolation and sensitive-access/export audit;
+- storage region, subprocessors, encryption/key handling and data-transfer boundaries;
+- retention, legal holds, deletion and statutory recordkeeping;
+- data subject request, grievance and incident-response ownership;
+- applicable incident escalation/reporting clock and evidence-preservation runbook;
+- tests and release evidence that demonstrate the control actually works.
+
+Do not apply a blanket consent rule or one global retention period to all data. Legal/compliance must decide which requirements apply to each purpose, record category and organisation role. In particular, distinguish current CERT-In obligations for entities/incidents within scope from the staged commencement of DPDP provisions.
+
+Use the repository's compliance status matrix. A document, UI screen, database field or successful build is not proof of legal compliance. Class C changes must include threat analysis, tenant-isolation verification, audit behavior, fail-closed handling, and rollback plan.
