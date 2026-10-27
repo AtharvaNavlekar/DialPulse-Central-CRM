@@ -4,7 +4,7 @@ import { PlatformRole, isPlatformRole, isTenantRole, PLATFORM_ROLES, TENANT_ROLE
 import { PlatformPermission } from '../policies/permissions.ts';
 import { getDb, isDatabaseConfigured } from '../db/index.ts';
 import { platformUsers, platformSessions, platformRolePermissions, platformPermissions } from '../db/schema.ts';
-import { eq, and, gt } from 'drizzle-orm';
+import { eq, and, gt, or, like } from 'drizzle-orm';
 
 export interface AuthoritativeUserRecord {
   id: string;
@@ -16,17 +16,30 @@ export interface AuthoritativeUserRecord {
   mfaEnabled?: boolean;
 }
 
+export interface TokenFamilyEntry {
+  hash: string;
+  rotatedAt: string;
+}
+
 export interface AuthoritativeSessionRecord {
   id: string;
   userId: string;
   refreshTokenHash?: string;
   previousRefreshTokenHash?: string | null;
+  lastRotatedAt?: Date | string | null;
+  tokenFamilyHistory?: string | null;
   isRevoked: boolean;
   expiresAt: Date | string;
 }
 
 export interface SessionRotationResult {
   updated: boolean;
+  rotatedAt?: Date;
+}
+
+export interface ReplayMatch {
+  session: AuthoritativeSessionRecord;
+  rotatedAt: Date | null;
 }
 
 export interface AuthoritativeDataStore {
@@ -35,6 +48,7 @@ export interface AuthoritativeDataStore {
   getPermissionsForRole(role: string): Promise<PlatformPermission[]>;
   getSessionByRefreshTokenHash?(hash: string): Promise<AuthoritativeSessionRecord | null>;
   findSessionByPreviousRefreshTokenHash?(hash: string): Promise<AuthoritativeSessionRecord | null>;
+  findSessionByReplayedTokenHash?(hash: string): Promise<ReplayMatch | null>;
   rotateSessionRefreshToken?(
     sessionId: string,
     newHash: string,
@@ -90,6 +104,8 @@ export class PostgresAuthoritativeDataStore implements AuthoritativeDataStore {
       userId: s.userId,
       refreshTokenHash: s.refreshTokenHash,
       previousRefreshTokenHash: s.previousRefreshTokenHash,
+      lastRotatedAt: s.lastRotatedAt,
+      tokenFamilyHistory: s.tokenFamilyHistory,
       isRevoked: s.isRevoked,
       expiresAt: s.expiresAt,
     };
@@ -112,12 +128,14 @@ export class PostgresAuthoritativeDataStore implements AuthoritativeDataStore {
       userId: s.userId,
       refreshTokenHash: s.refreshTokenHash,
       previousRefreshTokenHash: s.previousRefreshTokenHash,
+      lastRotatedAt: s.lastRotatedAt,
+      tokenFamilyHistory: s.tokenFamilyHistory,
       isRevoked: s.isRevoked,
       expiresAt: s.expiresAt,
     };
   }
 
-  async findSessionByPreviousRefreshTokenHash(hash: string): Promise<AuthoritativeSessionRecord | null> {
+  async findSessionByReplayedTokenHash(hash: string): Promise<ReplayMatch | null> {
     const db = getDb();
     if (!db) {
       throw new Error('PostgreSQL database pool is unavailable.');
@@ -125,18 +143,45 @@ export class PostgresAuthoritativeDataStore implements AuthoritativeDataStore {
     const rows = await db
       .select()
       .from(platformSessions)
-      .where(eq(platformSessions.previousRefreshTokenHash, hash))
+      .where(
+        or(
+          eq(platformSessions.previousRefreshTokenHash, hash),
+          like(platformSessions.tokenFamilyHistory, `%"${hash}"%`)
+        )
+      )
       .limit(1);
     if (rows.length === 0) return null;
     const s = rows[0];
-    return {
+    const session: AuthoritativeSessionRecord = {
       id: s.id,
       userId: s.userId,
       refreshTokenHash: s.refreshTokenHash,
       previousRefreshTokenHash: s.previousRefreshTokenHash,
+      lastRotatedAt: s.lastRotatedAt,
+      tokenFamilyHistory: s.tokenFamilyHistory,
       isRevoked: s.isRevoked,
       expiresAt: s.expiresAt,
     };
+
+    let rotatedAt: Date | null = s.lastRotatedAt ? new Date(s.lastRotatedAt) : null;
+    if (s.tokenFamilyHistory) {
+      try {
+        const history: TokenFamilyEntry[] = JSON.parse(s.tokenFamilyHistory);
+        const match = history.find((e) => e.hash === hash);
+        if (match?.rotatedAt) {
+          rotatedAt = new Date(match.rotatedAt);
+        }
+      } catch {
+        // Fallback to session lastRotatedAt
+      }
+    }
+
+    return { session, rotatedAt };
+  }
+
+  async findSessionByPreviousRefreshTokenHash(hash: string): Promise<AuthoritativeSessionRecord | null> {
+    const match = await this.findSessionByReplayedTokenHash(hash);
+    return match ? match.session : null;
   }
 
   async rotateSessionRefreshToken(
@@ -150,11 +195,42 @@ export class PostgresAuthoritativeDataStore implements AuthoritativeDataStore {
     if (!db) {
       throw new Error('PostgreSQL database pool is unavailable.');
     }
+    const now = new Date();
+
+    // Query existing session to update bounded token family history
+    const existing = await db
+      .select({
+        tokenFamilyHistory: platformSessions.tokenFamilyHistory,
+      })
+      .from(platformSessions)
+      .where(eq(platformSessions.id, sessionId))
+      .limit(1);
+
+    let history: TokenFamilyEntry[] = [];
+    if (existing.length > 0 && existing[0].tokenFamilyHistory) {
+      try {
+        const parsed = JSON.parse(existing[0].tokenFamilyHistory);
+        if (Array.isArray(parsed)) {
+          history = parsed;
+        }
+      } catch {
+        history = [];
+      }
+    }
+
+    const newEntry: TokenFamilyEntry = {
+      hash: oldHash,
+      rotatedAt: now.toISOString(),
+    };
+    const updatedHistory = [newEntry, ...history.filter((e) => e.hash !== oldHash)].slice(0, 10);
+
     const res = await db
       .update(platformSessions)
       .set({
         refreshTokenHash: newHash,
         previousRefreshTokenHash: oldHash,
+        lastRotatedAt: now,
+        tokenFamilyHistory: JSON.stringify(updatedHistory),
         expiresAt: newExpiresAt,
         ipAddress: meta?.ipAddress || null,
         userAgent: meta?.userAgent || null,
@@ -164,12 +240,12 @@ export class PostgresAuthoritativeDataStore implements AuthoritativeDataStore {
           eq(platformSessions.id, sessionId),
           eq(platformSessions.refreshTokenHash, oldHash),
           eq(platformSessions.isRevoked, false),
-          gt(platformSessions.expiresAt, new Date())
+          gt(platformSessions.expiresAt, now)
         )
       )
       .returning({ id: platformSessions.id });
 
-    return { updated: res.length === 1 };
+    return { updated: res.length === 1, rotatedAt: now };
   }
 
   async revokeSession(sessionId: string): Promise<void> {
@@ -344,13 +420,24 @@ export class StandaloneDevDataStore implements AuthoritativeDataStore {
     this.rolePermissions.set(role, new Set(permissions));
   }
 
-  createSession(sessionId: string, userId: string, expiresAt: Date, refreshTokenHash?: string): void {
+  createSession(
+    sessionId: string,
+    userId: string,
+    expiresAt: Date,
+    refreshTokenHash?: string,
+    previousRefreshTokenHash?: string | null,
+    lastRotatedAt?: Date | null,
+    tokenFamilyHistory?: string | null
+  ): void {
     this.sessions.set(sessionId, {
       id: sessionId,
       userId,
       isRevoked: false,
       expiresAt,
       refreshTokenHash,
+      previousRefreshTokenHash: previousRefreshTokenHash || null,
+      lastRotatedAt: lastRotatedAt || null,
+      tokenFamilyHistory: tokenFamilyHistory || '[]',
     });
   }
 
@@ -366,16 +453,42 @@ export class StandaloneDevDataStore implements AuthoritativeDataStore {
     return null;
   }
 
-  async findSessionByPreviousRefreshTokenHash(hash: string): Promise<AuthoritativeSessionRecord | null> {
+  async findSessionByReplayedTokenHash(hash: string): Promise<ReplayMatch | null> {
     if (process.env.NODE_ENV === 'production') {
       throw new Error('StandaloneDevDataStore is disabled in production.');
     }
     for (const session of this.sessions.values()) {
       if (session.previousRefreshTokenHash === hash) {
-        return session;
+        return {
+          session,
+          rotatedAt: session.lastRotatedAt ? new Date(session.lastRotatedAt) : null,
+        };
+      }
+      if (session.tokenFamilyHistory) {
+        try {
+          const history: TokenFamilyEntry[] = JSON.parse(session.tokenFamilyHistory);
+          const match = history.find((e) => e.hash === hash);
+          if (match) {
+            return {
+              session,
+              rotatedAt: match.rotatedAt
+                ? new Date(match.rotatedAt)
+                : session.lastRotatedAt
+                ? new Date(session.lastRotatedAt)
+                : null,
+            };
+          }
+        } catch {
+          // ignore parsing error
+        }
       }
     }
     return null;
+  }
+
+  async findSessionByPreviousRefreshTokenHash(hash: string): Promise<AuthoritativeSessionRecord | null> {
+    const match = await this.findSessionByReplayedTokenHash(hash);
+    return match ? match.session : null;
   }
 
   async rotateSessionRefreshToken(
@@ -392,14 +505,37 @@ export class StandaloneDevDataStore implements AuthoritativeDataStore {
     if (!session) {
       return { updated: false };
     }
-    const isUnexpired = new Date(session.expiresAt).getTime() > Date.now();
+    const now = new Date();
+    const isUnexpired = new Date(session.expiresAt).getTime() > now.getTime();
     if (session.refreshTokenHash !== oldHash || session.isRevoked || !isUnexpired) {
       return { updated: false };
     }
+
+    let history: TokenFamilyEntry[] = [];
+    if (session.tokenFamilyHistory) {
+      try {
+        const parsed = JSON.parse(session.tokenFamilyHistory);
+        if (Array.isArray(parsed)) {
+          history = parsed;
+        }
+      } catch {
+        history = [];
+      }
+    }
+
+    const newEntry: TokenFamilyEntry = {
+      hash: oldHash,
+      rotatedAt: now.toISOString(),
+    };
+    const updatedHistory = [newEntry, ...history.filter((e) => e.hash !== oldHash)].slice(0, 10);
+
     session.refreshTokenHash = newHash;
     session.previousRefreshTokenHash = oldHash;
+    session.lastRotatedAt = now;
+    session.tokenFamilyHistory = JSON.stringify(updatedHistory);
     session.expiresAt = newExpiresAt;
-    return { updated: true };
+
+    return { updated: true, rotatedAt: now };
   }
 
   async revokeSession(sessionId: string): Promise<void> {

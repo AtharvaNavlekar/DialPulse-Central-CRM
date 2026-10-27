@@ -1,6 +1,8 @@
 import { PlatformUser, OverviewData, Tenant, AuditRecord, SecurityEventItem, HealthCheckData } from './types.ts';
 
-class ApiClient {
+export class ApiClient {
+  private refreshPromise: Promise<boolean> | null = null;
+
   private async request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
@@ -53,19 +55,30 @@ class ApiClient {
   }
 
   async refreshToken(): Promise<boolean> {
-    try {
-      const response = await fetch('/api/auth/refresh', {
-        method: 'POST',
-        credentials: 'same-origin',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Requested-With': 'XMLHttpRequest',
-        },
-      });
-      return response.ok;
-    } catch {
-      return false;
+    if (this.refreshPromise) {
+      return this.refreshPromise;
     }
+
+    this.refreshPromise = (async () => {
+      try {
+        const response = await fetch('/api/auth/refresh', {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Requested-With': 'XMLHttpRequest',
+          },
+        });
+        // 200: Successfully rotated; 409: Concurrently rotated within grace window
+        return response.ok || response.status === 409;
+      } catch {
+        return false;
+      } finally {
+        this.refreshPromise = null;
+      }
+    })();
+
+    return this.refreshPromise;
   }
 
   async logout(): Promise<void> {

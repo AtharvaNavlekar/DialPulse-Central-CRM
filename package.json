@@ -20,7 +20,7 @@
     "verify:ops": "tsx scripts/verify-ops.ts",
     "db:generate": "drizzle-kit generate",
     "db:push": "drizzle-kit push",
-    "db:migrate": "drizzle-kit migrate"
+    "db:migrate": "tsx scripts/migrate-database.ts"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",

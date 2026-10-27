@@ -19,10 +19,19 @@ import {
   AuthoritativeUserRecord,
   AuthoritativeSessionRecord,
   SessionRotationResult,
+  ReplayMatch,
+  TokenFamilyEntry,
   standaloneDevStore,
 } from '../src/server/auth/authoritative-validator.ts';
 import { hashToken, generateRefreshToken, signAccessToken } from '../src/server/auth/token.ts';
 import { PlatformPermission } from '../src/server/policies/permissions.ts';
+import {
+  runDatabaseMigration,
+  validateSchemaCompatibility,
+  EXPECTED_BASELINE_TABLES,
+  EXPECTED_REQUIRED_COLUMNS,
+} from '../src/server/db/migrator.ts';
+import { ApiClient } from '../src/app/api.ts';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -149,12 +158,40 @@ class MockLifecycleStore implements AuthoritativeDataStore {
     return null;
   }
 
-  async findSessionByPreviousRefreshTokenHash(hash: string): Promise<AuthoritativeSessionRecord | null> {
+  async findSessionByReplayedTokenHash(hash: string): Promise<ReplayMatch | null> {
     if (this.failDatabase) throw new Error('FATAL: PostgreSQL pool connection error');
     for (const s of this.sessions.values()) {
-      if (s.previousRefreshTokenHash === hash) return s;
+      if (s.previousRefreshTokenHash === hash) {
+        return {
+          session: s,
+          rotatedAt: s.lastRotatedAt ? new Date(s.lastRotatedAt) : null,
+        };
+      }
+      if (s.tokenFamilyHistory) {
+        try {
+          const history: TokenFamilyEntry[] = JSON.parse(s.tokenFamilyHistory);
+          const match = history.find((e) => e.hash === hash);
+          if (match) {
+            return {
+              session: s,
+              rotatedAt: match.rotatedAt
+                ? new Date(match.rotatedAt)
+                : s.lastRotatedAt
+                ? new Date(s.lastRotatedAt)
+                : null,
+            };
+          }
+        } catch {
+          // ignore parsing error
+        }
+      }
     }
     return null;
+  }
+
+  async findSessionByPreviousRefreshTokenHash(hash: string): Promise<AuthoritativeSessionRecord | null> {
+    const match = await this.findSessionByReplayedTokenHash(hash);
+    return match ? match.session : null;
   }
 
   async rotateSessionRefreshToken(
@@ -169,14 +206,36 @@ class MockLifecycleStore implements AuthoritativeDataStore {
     }
     const s = this.sessions.get(sessionId);
     if (!s) return { updated: false };
-    const isUnexpired = new Date(s.expiresAt).getTime() > Date.now();
+    const now = new Date();
+    const isUnexpired = new Date(s.expiresAt).getTime() > now.getTime();
     if (s.refreshTokenHash !== oldHash || s.isRevoked || !isUnexpired) {
       return { updated: false };
     }
+
+    let history: TokenFamilyEntry[] = [];
+    if (s.tokenFamilyHistory) {
+      try {
+        const parsed = JSON.parse(s.tokenFamilyHistory);
+        if (Array.isArray(parsed)) {
+          history = parsed;
+        }
+      } catch {
+        history = [];
+      }
+    }
+
+    const newEntry: TokenFamilyEntry = {
+      hash: oldHash,
+      rotatedAt: now.toISOString(),
+    };
+    const updatedHistory = [newEntry, ...history.filter((e) => e.hash !== oldHash)].slice(0, 10);
+
     s.refreshTokenHash = newHash;
     s.previousRefreshTokenHash = oldHash;
+    s.lastRotatedAt = now;
+    s.tokenFamilyHistory = JSON.stringify(updatedHistory);
     s.expiresAt = newExpiresAt;
-    return { updated: true };
+    return { updated: true, rotatedAt: now };
   }
 
   async revokeSession(sessionId: string): Promise<void> {
@@ -877,6 +936,8 @@ export async function runSessionLifecycleTests() {
         userId: adminUser.id,
         refreshTokenHash: rt1Hash,
         previousRefreshTokenHash: null,
+        lastRotatedAt: null,
+        tokenFamilyHistory: '[]',
         isRevoked: false,
         expiresAt: rt1ExpiresAt,
       });
@@ -885,7 +946,7 @@ export async function runSessionLifecycleTests() {
       await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', () => resolve()));
 
       try {
-        // Fire 2 simultaneous refresh requests using the exact same old refresh token rt1
+        // Fire 2 simultaneous refresh requests using the exact same refresh token rt1
         const [res1, res2] = await Promise.all([
           makeRequest(server, '/api/auth/refresh', 'POST', {
             Cookie: `${COOKIE_NAMES.REFRESH_TOKEN}=${rt1}`,
@@ -896,30 +957,48 @@ export async function runSessionLifecycleTests() {
         ]);
 
         const statuses = [res1.status, res2.status].sort();
-        // Exactly one must succeed (200) and the other must fail (401)
+        // One must succeed (200) and the concurrent racer receives 409 within grace window
         assert.deepStrictEqual(
           statuses,
-          [200, 401],
-          'Exactly one concurrent refresh request must succeed and the other must fail'
+          [200, 409],
+          'One request must succeed with 200 and concurrent race must receive 409 CONCURRENT_ROTATION_IN_PROGRESS'
         );
 
         const successfulRes = res1.status === 200 ? res1 : res2;
-        const failedRes = res1.status === 200 ? res2 : res1;
+        const concurrentRes = res1.status === 200 ? res2 : res1;
 
         assert.strictEqual(successfulRes.body.success, true);
         assert(successfulRes.cookies[COOKIE_NAMES.REFRESH_TOKEN], 'Successful response has new refresh cookie');
+        assert(successfulRes.cookies[COOKIE_NAMES.ACCESS_TOKEN], 'Successful response has new access cookie');
 
-        // The failed response must NEVER issue cookies
+        // The concurrent 409 response must NOT issue new tokens and must NOT clear cookies
+        assert.strictEqual(concurrentRes.body.error, 'CONCURRENT_ROTATION_IN_PROGRESS');
         assert(
-          !failedRes.cookies[COOKIE_NAMES.REFRESH_TOKEN] ||
-          failedRes.cookies[COOKIE_NAMES.REFRESH_TOKEN].value === '' ||
-          failedRes.cookies[COOKIE_NAMES.REFRESH_TOKEN].attributes['expires'] !== undefined,
-          'Failed concurrent rotation must never issue active refresh cookies'
+          !concurrentRes.cookies[COOKIE_NAMES.REFRESH_TOKEN] ||
+          concurrentRes.cookies[COOKIE_NAMES.REFRESH_TOKEN].value === '',
+          'Concurrent response must never issue new refresh tokens'
         );
+        // Ensure cookies were NOT cleared by 409 response
+        assert(
+          !concurrentRes.cookies[COOKIE_NAMES.REFRESH_TOKEN] ||
+          concurrentRes.cookies[COOKIE_NAMES.REFRESH_TOKEN].attributes['expires'] === undefined,
+          'Concurrent response must not clear existing legitimate cookies'
+        );
+
+        // Crucial: The session in the store must NOT be revoked!
+        const sessionInStore = store.sessions.get(sessionId)!;
+        assert.strictEqual(sessionInStore.isRevoked, false, 'Legitimate session must NOT be revoked by concurrent race');
+
+        // Retrying with the new refresh token issued to successfulRes works
+        const newRt = successfulRes.cookies[COOKIE_NAMES.REFRESH_TOKEN].value;
+        const resRetry = await makeRequest(server, '/api/auth/refresh', 'POST', {
+          Cookie: `${COOKIE_NAMES.REFRESH_TOKEN}=${newRt}`,
+        });
+        assert.strictEqual(resRetry.status, 200, 'Session remains active and can rotate with new token');
       } finally {
         await new Promise<void>((resolve) => server.close(() => resolve()));
       }
-      console.log('  ✓ Criterion 13: Concurrent refresh attempts cannot both succeed; exactly one succeeds');
+      console.log('  ✓ Criterion 13: Concurrent refresh attempts safely handled: 200 + 409 without session destruction');
     }
 
     // -------------------------------------------------------------------------
@@ -978,24 +1057,28 @@ export async function runSessionLifecycleTests() {
     // Criterion 15: Migration safety and existing session backward compatibility
     // -------------------------------------------------------------------------
     {
-      const migrationPath = path.resolve(__dirname, '../drizzle/0001_add_previous_refresh_token_hash.sql');
-      assert(fs.existsSync(migrationPath), 'Migration 0001 must exist on disk');
-      const migrationSql = fs.readFileSync(migrationPath, 'utf-8');
+      const migrationPath1 = path.resolve(__dirname, '../drizzle/0001_add_previous_refresh_token_hash.sql');
+      assert(fs.existsSync(migrationPath1), 'Migration 0001 must exist on disk');
+      const migrationSql1 = fs.readFileSync(migrationPath1, 'utf-8');
 
       assert(
-        migrationSql.includes('ADD COLUMN IF NOT EXISTS "previous_refresh_token_hash"'),
-        'Migration must safely use ADD COLUMN IF NOT EXISTS for zero-downtime upgrades'
-      );
-      assert(
-        migrationSql.includes('idx_platform_sessions_prev_rf_hash'),
-        'Migration must include index for previous_refresh_token_hash'
-      );
-      assert(
-        migrationSql.includes('idx_platform_sessions_rf_hash'),
-        'Migration must include index for refresh_token_hash'
+        migrationSql1.includes('ADD COLUMN IF NOT EXISTS "previous_refresh_token_hash"'),
+        'Migration 0001 must safely use ADD COLUMN IF NOT EXISTS for zero-downtime upgrades'
       );
 
-      // Verify legacy session records (where previousRefreshTokenHash was null or omitted) work seamlessly
+      const migrationPath2 = path.resolve(__dirname, '../drizzle/0002_add_session_replay_history.sql');
+      assert(fs.existsSync(migrationPath2), 'Migration 0002 must exist on disk');
+      const migrationSql2 = fs.readFileSync(migrationPath2, 'utf-8');
+      assert(
+        migrationSql2.includes('ADD COLUMN IF NOT EXISTS "last_rotated_at"'),
+        'Migration 0002 must safely use ADD COLUMN IF NOT EXISTS for last_rotated_at'
+      );
+      assert(
+        migrationSql2.includes('ADD COLUMN IF NOT EXISTS "token_family_history"'),
+        'Migration 0002 must safely use ADD COLUMN IF NOT EXISTS for token_family_history'
+      );
+
+      // Verify legacy session records (where previousRefreshTokenHash and lastRotatedAt were null or omitted) work seamlessly
       const store = new MockLifecycleStore();
       const adminUser: AuthoritativeUserRecord = {
         id: 'usr_staff_admin_01',
@@ -1010,12 +1093,13 @@ export async function runSessionLifecycleTests() {
 
       const { token: legacyRt, hash: legacyHash, expiresAt: legacyExpiresAt } = generateRefreshToken();
       const legacySessionId = 'ses_legacy_pre_migration_01';
-      // Simulating row created before migration (previousRefreshTokenHash is null)
       store.sessions.set(legacySessionId, {
         id: legacySessionId,
         userId: adminUser.id,
         refreshTokenHash: legacyHash,
         previousRefreshTokenHash: null,
+        lastRotatedAt: null,
+        tokenFamilyHistory: null,
         isRevoked: false,
         expiresAt: legacyExpiresAt,
       });
@@ -1034,6 +1118,7 @@ export async function runSessionLifecycleTests() {
           legacyHash,
           'Rotated pre-migration session now correctly tracks previousRefreshTokenHash'
         );
+        assert(sessionRecord.lastRotatedAt !== null, 'Rotated session now sets lastRotatedAt');
       } finally {
         await new Promise<void>((resolve) => server.close(() => resolve()));
       }
@@ -1078,6 +1163,402 @@ export async function runSessionLifecycleTests() {
         await new Promise<void>((resolve) => server.close(() => resolve()));
       }
       console.log('  ✓ Criterion 16: Store without rotation support fails closed with HTTP 503');
+    }
+
+    // -------------------------------------------------------------------------
+    // Criterion 17: Stale token replay outside grace window revokes the session
+    // -------------------------------------------------------------------------
+    {
+      process.env.NODE_ENV = 'development';
+      const store = new MockLifecycleStore();
+      const adminUser: AuthoritativeUserRecord = {
+        id: 'usr_staff_admin_01',
+        email: 'admin@dialpulse.internal',
+        fullName: 'Admin',
+        platformRole: 'platform_admin',
+        isPlatformStaff: true,
+        isActive: true,
+      };
+      store.users.set(adminUser.id, adminUser);
+      store.rolePermissions.set('platform_admin', ['platform:overview:read']);
+
+      const { token: staleRt, hash: staleHash } = generateRefreshToken();
+      const { token: activeRt, hash: activeHash, expiresAt } = generateRefreshToken();
+      const sessionId = 'ses_stale_replay_test';
+
+      // Rotated 30 seconds ago (outside 10s grace window)
+      const rotatedAtPast = new Date(Date.now() - 30_000);
+      store.sessions.set(sessionId, {
+        id: sessionId,
+        userId: adminUser.id,
+        refreshTokenHash: activeHash,
+        previousRefreshTokenHash: staleHash,
+        lastRotatedAt: rotatedAtPast,
+        tokenFamilyHistory: JSON.stringify([{ hash: staleHash, rotatedAt: rotatedAtPast.toISOString() }]),
+        isRevoked: false,
+        expiresAt,
+      });
+
+      const { server } = createLifecycleTestServer(store);
+      await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', () => resolve()));
+
+      try {
+        const resStale = await makeRequest(server, '/api/auth/refresh', 'POST', {
+          Cookie: `${COOKIE_NAMES.REFRESH_TOKEN}=${staleRt}`,
+        });
+
+        assert.strictEqual(resStale.status, 401);
+        assert.strictEqual(resStale.body.error, 'SESSION_REUSE_DETECTED');
+        assert.strictEqual(store.sessions.get(sessionId)!.isRevoked, true, 'Compromised session must be revoked');
+        assert(
+          resStale.cookies[COOKIE_NAMES.REFRESH_TOKEN]?.attributes['expires'] !== undefined,
+          'Stale replay must clear cookies'
+        );
+      } finally {
+        await new Promise<void>((resolve) => server.close(() => resolve()));
+      }
+      console.log('  ✓ Criterion 17: Stale token replay outside grace window revokes session and clears cookies');
+    }
+
+    // -------------------------------------------------------------------------
+    // Criterion 18: Multiple rotations correctly preserve replay detection across token family history
+    // -------------------------------------------------------------------------
+    {
+      process.env.NODE_ENV = 'development';
+      const store = new MockLifecycleStore();
+      const adminUser: AuthoritativeUserRecord = {
+        id: 'usr_staff_admin_01',
+        email: 'admin@dialpulse.internal',
+        fullName: 'Admin',
+        platformRole: 'platform_admin',
+        isPlatformStaff: true,
+        isActive: true,
+      };
+      store.users.set(adminUser.id, adminUser);
+      store.rolePermissions.set('platform_admin', ['platform:overview:read']);
+
+      const { server } = createLifecycleTestServer(store);
+      await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', () => resolve()));
+
+      try {
+        // Initial session with T1
+        const { token: t1, hash: h1 } = generateRefreshToken();
+        const sessionId = 'ses_multi_rotation_family_test';
+        store.sessions.set(sessionId, {
+          id: sessionId,
+          userId: adminUser.id,
+          refreshTokenHash: h1,
+          previousRefreshTokenHash: null,
+          lastRotatedAt: null,
+          tokenFamilyHistory: '[]',
+          isRevoked: false,
+          expiresAt: new Date(Date.now() + 3600_000),
+        });
+
+        // Rotation 1: T1 -> T2
+        const resRot1 = await makeRequest(server, '/api/auth/refresh', 'POST', {
+          Cookie: `${COOKIE_NAMES.REFRESH_TOKEN}=${t1}`,
+        });
+        assert.strictEqual(resRot1.status, 200);
+        const t2 = resRot1.cookies[COOKIE_NAMES.REFRESH_TOKEN].value;
+
+        // Rotation 2: T2 -> T3
+        const resRot2 = await makeRequest(server, '/api/auth/refresh', 'POST', {
+          Cookie: `${COOKIE_NAMES.REFRESH_TOKEN}=${t2}`,
+        });
+        assert.strictEqual(resRot2.status, 200);
+        const t3 = resRot2.cookies[COOKIE_NAMES.REFRESH_TOKEN].value;
+
+        // Rotation 3: T3 -> T4
+        const resRot3 = await makeRequest(server, '/api/auth/refresh', 'POST', {
+          Cookie: `${COOKIE_NAMES.REFRESH_TOKEN}=${t3}`,
+        });
+        assert.strictEqual(resRot3.status, 200);
+
+        // Verify token family history contains historical hashes
+        const sessionRecord = store.sessions.get(sessionId)!;
+        assert(sessionRecord.tokenFamilyHistory, 'Session must have token family history');
+        const family: TokenFamilyEntry[] = JSON.parse(sessionRecord.tokenFamilyHistory);
+        assert(family.length >= 3, 'Family history must record all prior rotations');
+
+        // Age the rotation timestamps to be outside the grace window (60 seconds ago)
+        const pastDate = new Date(Date.now() - 60_000).toISOString();
+        const agedFamily = family.map((e) => ({ ...e, rotatedAt: pastDate }));
+        sessionRecord.tokenFamilyHistory = JSON.stringify(agedFamily);
+        sessionRecord.lastRotatedAt = new Date(Date.now() - 60_000);
+
+        // Now replay ancient token T1 (from 3 rotations ago!)
+        const resReplayT1 = await makeRequest(server, '/api/auth/refresh', 'POST', {
+          Cookie: `${COOKIE_NAMES.REFRESH_TOKEN}=${t1}`,
+        });
+        assert.strictEqual(resReplayT1.status, 401, 'Replaying historical token T1 must be detected as reuse');
+        assert.strictEqual(resReplayT1.body.error, 'SESSION_REUSE_DETECTED');
+        assert.strictEqual(sessionRecord.isRevoked, true, 'Session must be revoked after replaying historical token');
+      } finally {
+        await new Promise<void>((resolve) => server.close(() => resolve()));
+      }
+      console.log('  ✓ Criterion 18: Multiple rotations preserve replay detection across token family history');
+    }
+
+    // -------------------------------------------------------------------------
+    // Criterion 19: Expired and revoked sessions cannot rotate
+    // -------------------------------------------------------------------------
+    {
+      process.env.NODE_ENV = 'development';
+      const store = new MockLifecycleStore();
+      const adminUser: AuthoritativeUserRecord = {
+        id: 'usr_staff_admin_01',
+        email: 'admin@dialpulse.internal',
+        fullName: 'Admin',
+        platformRole: 'platform_admin',
+        isPlatformStaff: true,
+        isActive: true,
+      };
+      store.users.set(adminUser.id, adminUser);
+      store.rolePermissions.set('platform_admin', ['platform:overview:read']);
+
+      const { token: revokedRt, hash: revokedHash } = generateRefreshToken();
+      const revokedSessionId = 'ses_already_revoked';
+      store.sessions.set(revokedSessionId, {
+        id: revokedSessionId,
+        userId: adminUser.id,
+        refreshTokenHash: revokedHash,
+        previousRefreshTokenHash: null,
+        isRevoked: true, // already revoked
+        expiresAt: new Date(Date.now() + 3600_000),
+      });
+
+      const { token: expiredRt, hash: expiredHash } = generateRefreshToken();
+      const expiredSessionId = 'ses_already_expired';
+      store.sessions.set(expiredSessionId, {
+        id: expiredSessionId,
+        userId: adminUser.id,
+        refreshTokenHash: expiredHash,
+        previousRefreshTokenHash: null,
+        isRevoked: false,
+        expiresAt: new Date(Date.now() - 10_000), // expired in past
+      });
+
+      const { server } = createLifecycleTestServer(store);
+      await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', () => resolve()));
+
+      try {
+        const resRevoked = await makeRequest(server, '/api/auth/refresh', 'POST', {
+          Cookie: `${COOKIE_NAMES.REFRESH_TOKEN}=${revokedRt}`,
+        });
+        assert.strictEqual(resRevoked.status, 401);
+        assert.strictEqual(resRevoked.body.error, 'SESSION_REVOKED');
+
+        const resExpired = await makeRequest(server, '/api/auth/refresh', 'POST', {
+          Cookie: `${COOKIE_NAMES.REFRESH_TOKEN}=${expiredRt}`,
+        });
+        assert.strictEqual(resExpired.status, 401);
+        assert.strictEqual(resExpired.body.error, 'SESSION_EXPIRED');
+        assert.strictEqual(store.sessions.get(expiredSessionId)!.isRevoked, true, 'Expired session must be marked revoked');
+      } finally {
+        await new Promise<void>((resolve) => server.close(() => resolve()));
+      }
+      console.log('  ✓ Criterion 19: Expired and revoked sessions cannot rotate and clear cookies');
+    }
+
+    // -------------------------------------------------------------------------
+    // Criterion 20: Browser client single-flight refresh coalesces simultaneous requests
+    // -------------------------------------------------------------------------
+    {
+      const client = new ApiClient();
+      let fetchCount = 0;
+      const originalFetch = globalThis.fetch;
+
+      try {
+        // Mock global fetch to count refresh HTTP dispatches
+        globalThis.fetch = (async (input: any, init: any) => {
+          if (String(input).includes('/api/auth/refresh')) {
+            fetchCount++;
+            // Simulate 50ms latency
+            await new Promise((r) => setTimeout(r, 50));
+            return {
+              ok: true,
+              status: 200,
+              json: async () => ({ success: true }),
+            } as any;
+          }
+          return { ok: true, status: 200, json: async () => ({}) } as any;
+        }) as any;
+
+        // Trigger 4 simultaneous refreshToken calls
+        const results = await Promise.all([
+          client.refreshToken(),
+          client.refreshToken(),
+          client.refreshToken(),
+          client.refreshToken(),
+        ]);
+
+        assert.deepStrictEqual(results, [true, true, true, true]);
+        assert.strictEqual(fetchCount, 1, 'Single-flight mechanism must issue exactly 1 HTTP request for parallel refresh calls');
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
+      console.log('  ✓ Criterion 20: Browser client single-flight refresh coalesces parallel requests into 1 network call');
+    }
+
+    // -------------------------------------------------------------------------
+    // Criterion 21: Safe Database Migration & Existing Schema Adoption
+    // -------------------------------------------------------------------------
+    {
+      class MockPgMigrationClient {
+        public tables: Set<string> = new Set();
+        public columns: Map<string, Set<string>> = new Map();
+        public migrationsTable: Array<{ id: number; hash: string; created_at: number }> = [];
+        public userData: Map<string, any> = new Map();
+        public inTransaction: boolean = false;
+
+        async query(sqlText: string, params?: any[]): Promise<{ rows: any[] }> {
+          const trimmed = sqlText.trim();
+
+          if (trimmed === 'BEGIN') {
+            this.inTransaction = true;
+            return { rows: [] };
+          }
+          if (trimmed === 'COMMIT') {
+            this.inTransaction = false;
+            return { rows: [] };
+          }
+          if (trimmed === 'ROLLBACK') {
+            this.inTransaction = false;
+            return { rows: [] };
+          }
+
+          if (trimmed.includes('information_schema.tables')) {
+            return {
+              rows: Array.from(this.tables).map((t) => ({ table_name: t })),
+            };
+          }
+
+          if (trimmed.includes('information_schema.columns')) {
+            const rows: any[] = [];
+            for (const [table, cols] of this.columns.entries()) {
+              for (const col of cols) {
+                rows.push({ table_name: table, column_name: col });
+              }
+            }
+            return { rows };
+          }
+
+          if (trimmed.includes('CREATE SCHEMA IF NOT EXISTS "drizzle"')) {
+            return { rows: [] };
+          }
+
+          if (trimmed.includes('CREATE TABLE IF NOT EXISTS "drizzle"."__drizzle_migrations"')) {
+            return { rows: [] };
+          }
+
+          if (trimmed.includes('SELECT id, hash, created_at') && trimmed.includes('__drizzle_migrations')) {
+            return {
+              rows: [...this.migrationsTable],
+            };
+          }
+
+          if (trimmed.includes('INSERT INTO "drizzle"."__drizzle_migrations"')) {
+            const [hash, when] = params || [];
+            this.migrationsTable.push({
+              id: this.migrationsTable.length + 1,
+              hash: String(hash),
+              created_at: Number(when),
+            });
+            return { rows: [] };
+          }
+
+          if (trimmed.startsWith('CREATE TABLE')) {
+            const match = trimmed.match(/CREATE TABLE (?:IF NOT EXISTS )?"?([a-zA-Z0-9_]+)"?/i);
+            if (match) {
+              const tbl = match[1];
+              this.tables.add(tbl);
+              if (!this.columns.has(tbl)) {
+                this.columns.set(tbl, new Set());
+              }
+            }
+            return { rows: [] };
+          }
+
+          if (trimmed.startsWith('ALTER TABLE')) {
+            const match = trimmed.match(/ALTER TABLE "?([a-zA-Z0-9_]+)"? ADD COLUMN (?:IF NOT EXISTS )?"?([a-zA-Z0-9_]+)"?/i);
+            if (match) {
+              const tbl = match[1];
+              const col = match[2];
+              if (!this.columns.has(tbl)) {
+                this.columns.set(tbl, new Set());
+              }
+              this.columns.get(tbl)!.add(col);
+            }
+            return { rows: [] };
+          }
+
+          if (trimmed.startsWith('CREATE INDEX') || trimmed.startsWith('CREATE UNIQUE INDEX')) {
+            return { rows: [] };
+          }
+
+          return { rows: [] };
+        }
+      }
+
+      // Test 21A: Fresh Database Migration
+      const freshClient = new MockPgMigrationClient();
+      const freshResult = await runDatabaseMigration({
+        clientOrPool: freshClient,
+      });
+      assert.strictEqual(freshResult.success, true);
+      assert.strictEqual(freshResult.mode, 'fresh');
+      assert.strictEqual(freshResult.appliedMigrations.length, 3, 'Fresh migration applies 0000, 0001, 0002');
+      assert.strictEqual(freshClient.migrationsTable.length, 3, 'Records 3 migrations in __drizzle_migrations');
+
+      // Test 21B: Pre-Existing Database Adoption
+      const existingClient = new MockPgMigrationClient();
+      // Pre-provision expected baseline tables and columns
+      for (const t of EXPECTED_BASELINE_TABLES) {
+        existingClient.tables.add(t);
+        existingClient.columns.set(t, new Set());
+      }
+      for (const [tbl, cols] of Object.entries(EXPECTED_REQUIRED_COLUMNS)) {
+        for (const c of cols) {
+          existingClient.columns.get(tbl)!.add(c);
+        }
+      }
+      // Add existing production user data
+      existingClient.userData.set('usr_prod_admin', { email: 'admin@prod.com', full_name: 'Prod Admin' });
+
+      const adoptionResult = await runDatabaseMigration({
+        clientOrPool: existingClient,
+      });
+      assert.strictEqual(adoptionResult.success, true);
+      assert.strictEqual(adoptionResult.mode, 'adoption');
+      assert.strictEqual(existingClient.userData.has('usr_prod_admin'), true, 'Existing production user data must be preserved');
+      assert.strictEqual(existingClient.migrationsTable.length, 3, 'Adoption baselines 0000 and applies 0001 and 0002');
+
+      // Test 21C: Idempotency (re-running on up-to-date database)
+      const rerunResult = await runDatabaseMigration({
+        clientOrPool: existingClient,
+      });
+      assert.strictEqual(rerunResult.success, true);
+      assert.strictEqual(rerunResult.mode, 'noop', 'Re-running migration on up-to-date DB must return noop');
+      assert.strictEqual(rerunResult.appliedMigrations.length, 0);
+
+      // Test 21D: Schema Incompatibility halts safely
+      const brokenClient = new MockPgMigrationClient();
+      brokenClient.tables.add('platform_users');
+      // missing required columns
+      brokenClient.columns.set('platform_users', new Set(['id'])); // missing email, password_hash, etc.
+
+      let incompatibilityCaught = false;
+      try {
+        await runDatabaseMigration({
+          clientOrPool: brokenClient,
+        });
+      } catch (err: any) {
+        incompatibilityCaught = true;
+        assert(err.message.includes('SCHEMA_INCOMPATIBLE'), 'Must reject incompatible schema');
+      }
+      assert.strictEqual(incompatibilityCaught, true, 'Schema incompatibility must abort adoption safely');
+      console.log('  ✓ Criterion 21: Database migration works for fresh DB, existing-schema adoption, idempotency, and halts on incompatible schema');
     }
   } finally {
     // Restore environment

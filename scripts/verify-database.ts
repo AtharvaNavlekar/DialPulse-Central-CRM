@@ -1,7 +1,12 @@
 #!/usr/bin/env tsx
 import fs from 'fs';
 import path from 'path';
+import pg from 'pg';
+import * as dotenv from 'dotenv';
 import { validateDatabaseSchemaIntegrity } from '../src/server/sdlc/validator.ts';
+import { getAppliedMigrations } from '../src/server/db/migrator.ts';
+
+dotenv.config();
 
 /**
  * Automated Database Schema & Integrity Gate Runner
@@ -12,9 +17,11 @@ import { validateDatabaseSchemaIntegrity } from '../src/server/sdlc/validator.ts
  * 3. Composite primary key on platformRolePermissions
  * 4. Foreign key integrity and cascading
  * 5. Prevention of duplicate mappings
- * 6. Migration configuration readiness
+ * 6. Migration artifacts and journal tracking (0000, 0001, 0002)
+ * 7. Live PostgreSQL integration verification (if DATABASE_URL reachable)
+ *    or explicit limitation report (if test database unavailable)
  */
-function main() {
+async function main() {
   console.log(`====================================================`);
   console.log(`DIALPULSE CENTRAL CRM — DATABASE SCHEMA INTEGRITY GATE`);
   console.log(`====================================================`);
@@ -47,6 +54,8 @@ function main() {
   // 3. Verify versioned Drizzle migrations and metadata
   const drizzleDir = path.resolve(process.cwd(), 'drizzle');
   const journalPath = path.resolve(drizzleDir, 'meta', '_journal.json');
+  let expectedMigrationCount = 0;
+
   if (!fs.existsSync(drizzleDir)) {
     console.error(`❌ drizzle/ migrations directory not found.`);
     failures++;
@@ -57,22 +66,32 @@ function main() {
     try {
       const journal = JSON.parse(fs.readFileSync(journalPath, 'utf-8'));
       const entries = journal.entries || [];
+      expectedMigrationCount = entries.length;
+
       const hasBase = entries.some((e: any) => e.idx === 0);
-      const hasSessionMigration = entries.some((e: any) => e.tag?.includes('previous_refresh_token_hash') || e.idx === 1);
+      const hasSessionPrevHash = entries.some((e: any) => e.tag?.includes('previous_refresh_token_hash') || e.idx === 1);
+      const hasSessionReplayHistory = entries.some((e: any) => e.tag?.includes('session_replay_history') || e.idx === 2);
 
       if (!hasBase) {
         console.error(`❌ Migration journal missing baseline migration (idx 0).`);
         failures++;
       }
-      if (!hasSessionMigration) {
-        console.error(`❌ Migration journal missing platform_sessions previous_refresh_token_hash migration.`);
+      if (!hasSessionPrevHash) {
+        console.error(`❌ Migration journal missing platform_sessions previous_refresh_token_hash migration (idx 1).`);
         failures++;
-      } else {
+      }
+      if (!hasSessionReplayHistory) {
+        console.error(`❌ Migration journal missing platform_sessions replay history migration (idx 2).`);
+        failures++;
+      }
+
+      if (hasBase && hasSessionPrevHash && hasSessionReplayHistory) {
         console.log(`  ✓ Migration journal verified: ${entries.length} versioned migration(s) tracked.`);
       }
 
-      // Verify 0001 sql content
+      // Verify SQL migration files exist and contain required schema additions
       const migrationFiles = fs.readdirSync(drizzleDir).filter((f) => f.endsWith('.sql'));
+
       const sessionMigrationSql = migrationFiles.find((f) => f.includes('0001') || f.includes('previous_refresh_token_hash'));
       if (!sessionMigrationSql) {
         console.error(`❌ SQL migration file for platform_sessions previous_refresh_token_hash not found in drizzle/.`);
@@ -86,10 +105,53 @@ function main() {
           console.log(`  ✓ Versioned SQL migration verified: ${sessionMigrationSql}`);
         }
       }
+
+      const replayMigrationSql = migrationFiles.find((f) => f.includes('0002') || f.includes('session_replay_history'));
+      if (!replayMigrationSql) {
+        console.error(`❌ SQL migration file for platform_sessions session_replay_history not found in drizzle/.`);
+        failures++;
+      } else {
+        const sqlContent = fs.readFileSync(path.resolve(drizzleDir, replayMigrationSql), 'utf-8');
+        if (!sqlContent.includes('last_rotated_at') || !sqlContent.includes('token_family_history')) {
+          console.error(`❌ Migration file ${replayMigrationSql} missing last_rotated_at or token_family_history.`);
+          failures++;
+        } else {
+          console.log(`  ✓ Versioned SQL migration verified: ${replayMigrationSql}`);
+        }
+      }
     } catch (err: any) {
       console.error(`❌ Failed inspecting migration artifacts: ${err.message}`);
       failures++;
     }
+  }
+
+  // 4. Clearly distinguish static schema validation from live PostgreSQL integration
+  const databaseUrl = process.env.DATABASE_URL?.trim();
+  if (databaseUrl) {
+    const pool = new pg.Pool({
+      connectionString: databaseUrl,
+      connectionTimeoutMillis: 3000,
+    });
+    try {
+      const client = await pool.connect();
+      try {
+        const applied = await getAppliedMigrations(client);
+        console.log(
+          `  ✓ [LIVE POSTGRESQL CHECK]: Connected to PostgreSQL instance. Applied migrations: ${applied.length} / ${expectedMigrationCount}.`
+        );
+      } finally {
+        client.release();
+      }
+    } catch (err: any) {
+      console.log(`  ℹ️ [LIVE POSTGRESQL CHECK]: Configured DATABASE_URL was unreachable (${err.message}).`);
+      console.log(`    Live migration integration skipped; static migration artifacts validated.`);
+    } finally {
+      await pool.end().catch(() => {});
+    }
+  } else {
+    console.log(`  ℹ️ [LIVE POSTGRESQL LIMITATION]: No PostgreSQL test database provisioned (DATABASE_URL is not set).`);
+    console.log(`    Static migration artifact and schema validation completed successfully.`);
+    console.log(`    Live integration migration tests require a running PostgreSQL test database.`);
   }
 
   if (failures > 0) {
@@ -97,7 +159,7 @@ function main() {
     process.exit(1);
   }
 
-  console.log(`\n✓ [DATABASE GATE PASSED]: PostgreSQL schema definitions are intact and authoritative.\n`);
+  console.log(`\n✓ [DATABASE GATE PASSED]: PostgreSQL schema definitions and migration artifacts are verified.\n`);
   process.exit(0);
 }
 

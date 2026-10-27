@@ -14,6 +14,7 @@ import {
   AuthoritativeDataStore,
   PostgresAuthoritativeDataStore,
   standaloneDevStore,
+  ReplayMatch,
 } from '../auth/authoritative-validator.ts';
 import {
   COOKIE_NAMES,
@@ -347,6 +348,8 @@ router.post('/login', async (req: ExtendedRequest, res: Response) => {
   });
 });
 
+export const REFRESH_GRACE_WINDOW_MS = 10_000;
+
 /**
  * POST /api/auth/refresh
  * Rotates the refresh token and issues a new access token via HTTP-only cookies.
@@ -354,13 +357,16 @@ router.post('/login', async (req: ExtendedRequest, res: Response) => {
  * Requirements:
  * 1. Read refresh token strictly from HTTP-only cookie 'dp_central_refresh_token'.
  * 2. Hash token (SHA-256) before comparing with stored hash.
- * 3. Reject reuse: if previousRefreshTokenHash matches, revoke the session immediately and return 401.
- * 4. Require matching, active, unexpired, and non-revoked platform session.
- * 5. Verify associated staff account is still active and platform staff.
- * 6. Atomically update stored refresh-token hash, previous hash, and session expiry.
- * 7. Issue new short-lived access-token cookie and rotated refresh-token cookie.
- * 8. Never return token values in JSON.
- * 9. Fail closed (503 Service Unavailable) if PostgreSQL is unavailable.
+ * 3. Preserve concurrency safety: legitimate concurrent refreshes within REFRESH_GRACE_WINDOW_MS (10s)
+ *    do not revoke the session or clear cookies; return 409 CONCURRENT_ROTATION_IN_PROGRESS without tokens.
+ * 4. Genuine stale token replay (or replaying older tokens in the family history past the grace window)
+ *    immediately revokes the session, clears cookies, and returns 401 SESSION_REUSE_DETECTED.
+ * 5. Require matching, active, unexpired, and non-revoked platform session.
+ * 6. Verify associated staff account is still active and platform staff.
+ * 7. Atomically update stored refresh-token hash, previous hash, lastRotatedAt, bounded token family history, and session expiry.
+ * 8. Issue new short-lived access-token cookie and rotated refresh-token cookie only to winning rotation.
+ * 9. Never return token values in JSON.
+ * 10. Fail closed (503 Service Unavailable) if PostgreSQL is unavailable.
  */
 router.post('/refresh', async (req: ExtendedRequest, res: Response) => {
   const rawRefreshToken = req.cookies?.[COOKIE_NAMES.REFRESH_TOKEN];
@@ -393,32 +399,80 @@ router.post('/refresh', async (req: ExtendedRequest, res: Response) => {
   }
 
   try {
-    // 1. Detect reuse: check if token matches a previous refresh token
-    if (store.findSessionByPreviousRefreshTokenHash) {
-      const reusedSession = await store.findSessionByPreviousRefreshTokenHash(tokenHash);
-      if (reusedSession) {
-        // Immediate safe revocation of compromised session
+    // 1. Detect reuse / replay: check if token matches a previous refresh token or historical family entry
+    let replayMatch: ReplayMatch | null = null;
+    if (store.findSessionByReplayedTokenHash) {
+      replayMatch = await store.findSessionByReplayedTokenHash(tokenHash);
+    } else if (store.findSessionByPreviousRefreshTokenHash) {
+      const s = await store.findSessionByPreviousRefreshTokenHash(tokenHash);
+      if (s) {
+        replayMatch = {
+          session: s,
+          rotatedAt: s.lastRotatedAt ? new Date(s.lastRotatedAt) : null,
+        };
+      }
+    }
+
+    if (replayMatch) {
+      const reusedSession = replayMatch.session;
+      const rotatedAt = replayMatch.rotatedAt;
+      const now = Date.now();
+
+      // If the session was explicitly revoked, reject immediately
+      if (reusedSession.isRevoked) {
+        res.clearCookie(COOKIE_NAMES.ACCESS_TOKEN, getClearCookieOptions());
+        res.clearCookie(COOKIE_NAMES.REFRESH_TOKEN, getClearCookieOptions());
+        return res.status(401).json({
+          error: 'SESSION_REVOKED',
+          message: 'Platform session has been revoked. Please log in again.',
+        });
+      }
+
+      // If the session has expired, reject immediately
+      if (now > new Date(reusedSession.expiresAt).getTime()) {
         if (store.revokeSession) {
           await store.revokeSession(reusedSession.id);
         }
         res.clearCookie(COOKIE_NAMES.ACCESS_TOKEN, getClearCookieOptions());
         res.clearCookie(COOKIE_NAMES.REFRESH_TOKEN, getClearCookieOptions());
-
-        await AuditService.record({
-          action: 'session_reuse_detected',
-          targetType: 'session',
-          targetId: reusedSession.id,
-          result: 'denied',
-          ipAddress: req.clientIp,
-          userAgent: req.headers['user-agent'],
-          details: { userId: reusedSession.userId },
-        }).catch(() => {});
-
         return res.status(401).json({
-          error: 'SESSION_REUSE_DETECTED',
-          message: 'Refresh token reuse detected. Platform session has been revoked for security.',
+          error: 'SESSION_EXPIRED',
+          message: 'Platform session has expired. Please log in again.',
         });
       }
+
+      const elapsedMs = rotatedAt ? now - new Date(rotatedAt).getTime() : Infinity;
+
+      if (elapsedMs >= 0 && elapsedMs <= REFRESH_GRACE_WINDOW_MS) {
+        // Legitimate concurrent request racing with recent rotation within grace window!
+        // DO NOT revoke session! DO NOT clear cookies! DO NOT return rotated tokens to racing request!
+        return res.status(409).json({
+          error: 'CONCURRENT_ROTATION_IN_PROGRESS',
+          message: 'A session refresh is already in progress or completed recently. Please retry with your updated credentials.',
+        });
+      }
+
+      // Genuine stale token replay outside grace window!
+      if (store.revokeSession) {
+        await store.revokeSession(reusedSession.id);
+      }
+      res.clearCookie(COOKIE_NAMES.ACCESS_TOKEN, getClearCookieOptions());
+      res.clearCookie(COOKIE_NAMES.REFRESH_TOKEN, getClearCookieOptions());
+
+      await AuditService.record({
+        action: 'session_reuse_detected',
+        targetType: 'session',
+        targetId: reusedSession.id,
+        result: 'denied',
+        ipAddress: req.clientIp,
+        userAgent: req.headers['user-agent'],
+        details: { userId: reusedSession.userId, elapsedMs },
+      }).catch(() => {});
+
+      return res.status(401).json({
+        error: 'SESSION_REUSE_DETECTED',
+        message: 'Refresh token reuse detected. Platform session has been revoked for security.',
+      });
     }
 
     // 2. Query session by active refresh token hash
@@ -495,31 +549,77 @@ router.post('/refresh', async (req: ExtendedRequest, res: Response) => {
     );
 
     if (!rotationResult || !rotationResult.updated) {
-      // 0 rows updated! Check if token was rotated by a concurrent request (reuse detection)
-      if (store.findSessionByPreviousRefreshTokenHash) {
-        const reusedSession = await store.findSessionByPreviousRefreshTokenHash(tokenHash);
-        if (reusedSession) {
+      // 0 rows updated! Check if token was rotated by a concurrent request
+      let conflictReplay: ReplayMatch | null = null;
+      if (store.findSessionByReplayedTokenHash) {
+        conflictReplay = await store.findSessionByReplayedTokenHash(tokenHash);
+      } else if (store.findSessionByPreviousRefreshTokenHash) {
+        const s = await store.findSessionByPreviousRefreshTokenHash(tokenHash);
+        if (s) {
+          conflictReplay = {
+            session: s,
+            rotatedAt: s.lastRotatedAt ? new Date(s.lastRotatedAt) : null,
+          };
+        }
+      }
+
+      if (conflictReplay) {
+        const confSession = conflictReplay.session;
+        const confRotatedAt = conflictReplay.rotatedAt;
+        const now = Date.now();
+
+        if (confSession.isRevoked) {
+          res.clearCookie(COOKIE_NAMES.ACCESS_TOKEN, getClearCookieOptions());
+          res.clearCookie(COOKIE_NAMES.REFRESH_TOKEN, getClearCookieOptions());
+          return res.status(401).json({
+            error: 'SESSION_REVOKED',
+            message: 'Platform session has been revoked. Please log in again.',
+          });
+        }
+
+        if (now > new Date(confSession.expiresAt).getTime()) {
           if (store.revokeSession) {
-            await store.revokeSession(reusedSession.id);
+            await store.revokeSession(confSession.id);
           }
           res.clearCookie(COOKIE_NAMES.ACCESS_TOKEN, getClearCookieOptions());
           res.clearCookie(COOKIE_NAMES.REFRESH_TOKEN, getClearCookieOptions());
-
-          await AuditService.record({
-            action: 'session_reuse_detected',
-            targetType: 'session',
-            targetId: reusedSession.id,
-            result: 'denied',
-            ipAddress: req.clientIp,
-            userAgent: req.headers['user-agent'],
-            details: { userId: reusedSession.userId, conflict: 'concurrent_or_replayed_token' },
-          }).catch(() => {});
-
           return res.status(401).json({
-            error: 'SESSION_REUSE_DETECTED',
-            message: 'Refresh token reuse detected. Platform session has been revoked for security.',
+            error: 'SESSION_EXPIRED',
+            message: 'Platform session has expired. Please log in again.',
           });
         }
+
+        const elapsedMs = confRotatedAt ? now - new Date(confRotatedAt).getTime() : Infinity;
+        if (elapsedMs >= 0 && elapsedMs <= REFRESH_GRACE_WINDOW_MS) {
+          // Legitimate concurrent rotation conflict within grace window:
+          // Do not revoke session! Do not clear cookies! Do not issue tokens!
+          return res.status(409).json({
+            error: 'CONCURRENT_ROTATION_IN_PROGRESS',
+            message: 'A session refresh is already in progress or completed recently. Please retry with your updated credentials.',
+          });
+        }
+
+        // Stale replay outside grace window
+        if (store.revokeSession) {
+          await store.revokeSession(confSession.id);
+        }
+        res.clearCookie(COOKIE_NAMES.ACCESS_TOKEN, getClearCookieOptions());
+        res.clearCookie(COOKIE_NAMES.REFRESH_TOKEN, getClearCookieOptions());
+
+        await AuditService.record({
+          action: 'session_reuse_detected',
+          targetType: 'session',
+          targetId: confSession.id,
+          result: 'denied',
+          ipAddress: req.clientIp,
+          userAgent: req.headers['user-agent'],
+          details: { userId: confSession.userId, conflict: 'concurrent_or_replayed_token', elapsedMs },
+        }).catch(() => {});
+
+        return res.status(401).json({
+          error: 'SESSION_REUSE_DETECTED',
+          message: 'Refresh token reuse detected. Platform session has been revoked for security.',
+        });
       }
 
       res.clearCookie(COOKIE_NAMES.ACCESS_TOKEN, getClearCookieOptions());
