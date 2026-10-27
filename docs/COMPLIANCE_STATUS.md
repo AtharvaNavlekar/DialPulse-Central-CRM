@@ -26,7 +26,7 @@ Status values: **IMPLEMENTED** = code-level control exists and has evidence; **P
 
 | Control area | Current status | Evidence / gap | Planned action |
 |---|---|---|---|
-| Platform identity and sessions | PARTIAL | PostgreSQL-backed identity/session checks, cookie-only browser authentication and refresh-token rotation exist. MFA/passkeys/step-up are not implemented. | Phase 01C real MFA and step-up; do not infer MFA from a database flag. |
+| Platform identity and sessions | PARTIAL | PostgreSQL-backed identity/session checks and refresh-token rotation exist. The Phase 01C branch adds TOTP enrollment/login, encrypted authenticator secrets, single-use recovery codes and recent-MFA step-up gates; merge, CI and deployment evidence are pending. | Phase 01C real MFA and step-up; do not infer MFA from a database flag. |
 | Privileged access / RBAC | PARTIAL | Server-side permissions are database-backed. Just-in-time approval, temporary entitlements and separation-of-duties workflow are not implemented. | Add least-privilege review, approvals and expiry after identity hardening. |
 | Tenant isolation | PARTIAL / NOT VERIFIED end-to-end | Central platform routes enforce platform roles and tenant metadata is managed here. Full isolation across Client CRM/customer data stores has not been proven by this repository. | Test tenant boundaries in the Client CRM and each data service; verify isolation as part of provisioning. |
 | Audit trail integrity | PARTIAL | Audit events can be recorded to PostgreSQL and the application emits structured events. The complete audit system is not yet independently evidenced as append-only/tamper-evident, and every sensitive mutation must be checked for durable audit enforcement. | Apply durable sensitive-audit semantics consistently, restrict audit-store access, add integrity checks, retention and failure alerts. |
@@ -65,3 +65,8 @@ A control does not change status because a document, UI screen or database colum
 6. [RBI — Master Directions index, including the KYC Direction](https://old.rbi.org.in/commonman/English/Scripts/MasterDirection.aspx)
 
 **Legal review requirement:** Have Indian counsel or a qualified compliance professional confirm the current consolidated text, amendments, commencement, entity scope and contract responsibilities before production deployment. This register is not proof of legal compliance.
+
+
+## Phase 01C status boundary
+
+The implementation branch adds server-verified TOTP, encrypted secret storage, hashed single-use recovery codes, MFA lockout, session proof enforcement and five-minute step-up. Keep this control **PARTIAL** until CI is green and the deployment key, migration, recovery and operational procedures have been verified. This is not a compliance attestation.

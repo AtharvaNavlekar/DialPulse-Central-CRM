@@ -4,7 +4,7 @@ import { checkDbConnection, isDatabaseConfigured, getDb } from '../db/index.ts';
 import { ALL_PERMISSION_DEFINITIONS, PLATFORM_PERMISSIONS, PlatformPermission } from '../policies/permissions.ts';
 import { PLATFORM_ROLES, PlatformRole } from '../policies/rbac.ts';
 import { runDatabaseSeed } from '../db/seed.ts';
-import { requirePlatformAuth } from '../middleware/auth.ts';
+import { requirePlatformAuth, requireRecentMfa } from '../middleware/auth.ts';
 import { requirePlatformPermission } from '../middleware/authorize.ts';
 import { platformRolePermissions, platformPermissions } from '../db/schema.ts';
 import { eq } from 'drizzle-orm';
@@ -186,6 +186,7 @@ router.post(
   '/seed',
   requirePlatformAuth,
   requirePlatformPermission(PLATFORM_PERMISSIONS.STAFF_MANAGE),
+  requireRecentMfa,
   async (req: ExtendedRequest, res: Response) => {
     if (process.env.NODE_ENV === 'production') {
       return res.status(403).json({

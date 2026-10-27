@@ -18,6 +18,7 @@ import { runSecurityTests } from './security.test.ts';
 import { runSdlcTests } from './sdlc.test.ts';
 import { runTenantFilterTests } from './tenant-filter.test.ts';
 import { runDatabaseTlsTests } from './db-tls.test.ts';
+import { runMfaTests } from './mfa.test.ts';
 
 async function main() {
   console.log('====================================================');
@@ -35,6 +36,7 @@ async function main() {
     await runSdlcTests();
     await runTenantFilterTests();
     await runDatabaseTlsTests();
+    await runMfaTests();
 
     const elapsed = Date.now() - startTime;
     console.log('\n====================================================');

@@ -3,6 +3,9 @@ import { ExtendedRequest } from './request-context.ts';
 import { PlatformSecurityContext } from '../auth/context.ts';
 import { validatePlatformAuthorization } from '../auth/authoritative-validator.ts';
 import { AuditService } from '../audit/service.ts';
+import { getDb, isDatabaseConfigured } from '../db/index.ts';
+import { platformSessions } from '../db/schema.ts';
+import { and, eq } from 'drizzle-orm';
 
 declare global {
   namespace Express {
@@ -77,4 +80,17 @@ export async function requirePlatformAuth(req: ExtendedRequest, res: Response, n
   // Attach authoritative security context
   req.securityContext = result.context;
   next();
+}
+
+
+export async function requireRecentMfa(req: ExtendedRequest, res: Response, next: NextFunction) {
+ const context=req.securityContext;
+ if(!context)return res.status(401).json({error:'UNAUTHENTICATED',message:'Platform authentication required.'});
+ if(!isDatabaseConfigured())return res.status(503).json({error:'DATABASE_REQUIRED',message:'Step-up requires PostgreSQL.'});
+ try {
+  const db=getDb(); if(!db)return res.status(503).json({error:'DATABASE_UNAVAILABLE',message:'Step-up unavailable.'});
+  const rows=await db.select({until:platformSessions.mfaStepUpUntil}).from(platformSessions).where(and(eq(platformSessions.id,context.sessionId),eq(platformSessions.userId,context.actorId),eq(platformSessions.isRevoked,false))).limit(1);
+  if(!rows[0]?.until||new Date(rows[0].until).getTime()<=Date.now())return res.status(403).json({error:'STEP_UP_REQUIRED',message:'Fresh authenticator verification required for this sensitive action.'});
+  return next();
+ } catch(err:any) { console.error('[MFA_STEP_UP] Check failed:',err.message); return res.status(503).json({error:'DATABASE_UNAVAILABLE',message:'Could not validate recent MFA.'}); }
 }

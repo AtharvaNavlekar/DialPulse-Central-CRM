@@ -7,9 +7,10 @@ import { signAccessToken, generateRefreshToken, hashToken, verifyAccessToken } f
 import { requirePlatformAuth } from '../middleware/auth.ts';
 import { getDb, isDatabaseConfigured } from '../db/index.ts';
 import { platformUsers, platformSessions } from '../db/schema.ts';
-import { eq } from 'drizzle-orm';
+import { and, eq, isNull } from 'drizzle-orm';
 import { getPermissionsForRole, PlatformRole } from '../policies/rbac.ts';
 import { AuditService } from '../audit/service.ts';
+import { decryptSecret, encryptSecret, encryptionKey, generateSecret, matchingTotpStep, newRecoveryCodes, otpAuthUri, recoveryHash } from '../auth/mfa.ts';
 import {
   AuthoritativeDataStore,
   PostgresAuthoritativeDataStore,
@@ -21,6 +22,8 @@ import {
   getAccessTokenCookieOptions,
   getRefreshTokenCookieOptions,
   getClearCookieOptions,
+  getMfaChallengeCookieOptions,
+  getClearMfaChallengeCookieOptions,
 } from '../auth/cookies.ts';
 
 const router = Router();
@@ -273,80 +276,42 @@ router.post('/login', async (req: ExtendedRequest, res: Response) => {
     });
   }
 
-  // Generate authoritative platform session
-  const sessionId = `ses_${crypto.randomUUID()}`;
-  const { token: refreshToken, hash: refreshHash, expiresAt: refreshExpiresAt } = generateRefreshToken();
-
-  if (isDbBacked) {
-    try {
-      const db = getDb();
-      if (db) {
-        await db.insert(platformSessions).values({
-          id: sessionId,
-          userId: user.id,
-          refreshTokenHash: refreshHash,
-          userAgent: req.headers['user-agent'] || null,
-          ipAddress: req.clientIp || null,
-          expiresAt: refreshExpiresAt,
-          isRevoked: false,
-        });
-
-        await db.update(platformUsers).set({ lastLoginAt: new Date() }).where(eq(platformUsers.id, user.id));
-      }
-    } catch (err: any) {
-      console.error('[AUTH_AUTHORITY] Failed to persist session to PostgreSQL:', err.message);
-      return res.status(503).json({
-        error: 'SESSION_CREATION_FAILED',
-        message: 'Failed to record authoritative session in database.',
-      });
-    }
-  } else {
-    // Record in development standalone store
-    standaloneDevStore.createSession(sessionId, user.id, refreshExpiresAt, refreshHash);
-  }
-
-  // Sign access token with session binding
-  const accessToken = signAccessToken({
-    sub: user.id,
-    email: user.email,
-    role: user.platformRole,
-    isPlatformStaff: true,
-    sessionId,
-  });
-
-  // Set HTTP-only cookies with secure attributes
-  res.cookie(COOKIE_NAMES.ACCESS_TOKEN, accessToken, getAccessTokenCookieOptions());
-  res.cookie(COOKIE_NAMES.REFRESH_TOKEN, refreshToken, getRefreshTokenCookieOptions());
-
-  await AuditService.record({
-    actor: {
-      actorId: user.id,
-      actorEmail: user.email,
-      actorPlatformRole: user.platformRole,
-    },
-    action: 'platform_staff_logged_in',
-    targetType: 'session',
-    targetId: sessionId,
-    result: 'success',
-    ipAddress: req.clientIp,
-    userAgent: req.headers['user-agent'],
-    details: { isDbBacked, role: user.platformRole },
-  }).catch(() => {});
-
-  // Never return access tokens or refresh tokens in login JSON responses
-  return res.json({
-    success: true,
-    user: {
-      id: user.id,
-      email: user.email,
-      fullName: user.fullName,
-      platformRole: user.platformRole,
-      isPlatformStaff: true,
-      permissions: getPermissionsForRole(user.platformRole),
-      isDbBacked,
-    },
-  });
+  // Password is only factor one; no privileged session is issued before verified MFA.
+  if (!isDbBacked || !isDatabaseConfigured()) return res.status(503).json({ error: 'MFA_DATABASE_REQUIRED', message: 'MFA-enabled platform sessions require PostgreSQL.' });
+  const db = getDb(); if (!db) return res.status(503).json({ error: 'DATABASE_UNAVAILABLE', message: 'MFA database is unavailable.' });
+  try {
+    encryptionKey();
+    const challenge = jwt.sign({ sub: user.id, purpose: 'mfa_challenge' }, process.env.JWT_SECRET!, { expiresIn: '5m', algorithm: 'HS256', issuer: 'dialpulse-central-crm' });
+    res.cookie(COOKIE_NAMES.MFA_CHALLENGE, challenge, getMfaChallengeCookieOptions()); res.setHeader('Cache-Control', 'no-store');
+    if (user.mfaEnabled) { if (!user.mfaSecretEncrypted) throw new Error('MFA_SECRET_MISSING'); decryptSecret(user.mfaSecretEncrypted); return res.json({ success: true, mfaRequired: true }); }
+    const secret = generateSecret();
+    await db.update(platformUsers).set({ mfaPendingSecretEncrypted: encryptSecret(secret), mfaFailedAttempts: 0, mfaLockedUntil: null, updatedAt: new Date() }).where(eq(platformUsers.id, user.id));
+    await AuditService.record({ action: 'platform_staff_mfa_enrollment_started', targetType: 'auth', targetId: user.id, result: 'success', ipAddress: req.clientIp, userAgent: req.headers['user-agent'] }).catch(() => {});
+    return res.json({ success: true, mfaEnrollmentRequired: true, secret, provisioningUri: otpAuthUri(user.email, secret) });
+  } catch (err: any) { res.clearCookie(COOKIE_NAMES.MFA_CHALLENGE, getClearMfaChallengeCookieOptions()); console.error('[MFA] Challenge init failed:', err.message); return res.status(503).json({ error: 'MFA_CONFIGURATION_OR_STATE_ERROR', message: 'MFA could not be initialized. Contact the platform operator.' }); }
 });
+
+
+function challengeUserId(req: ExtendedRequest): string | null { const t=req.cookies?.[COOKIE_NAMES.MFA_CHALLENGE], k=process.env.JWT_SECRET?.trim(); if(!t||!k)return null; try { const p=jwt.verify(t,k,{algorithms:['HS256'],issuer:'dialpulse-central-crm'}) as jwt.JwtPayload; return p.purpose==='mfa_challenge'&&typeof p.sub==='string'?p.sub:null; } catch{return null;} }
+function clearChallenge(res: Response) { res.clearCookie(COOKIE_NAMES.MFA_CHALLENGE,getClearMfaChallengeCookieOptions()); }
+function isLocked(u:any) { return Boolean(u.mfaLockedUntil&&new Date(u.mfaLockedUntil).getTime()>Date.now()); }
+async function failMfa(db:any,u:any,req:ExtendedRequest) { const n=Number(u.mfaFailedAttempts||0)+1; await db.update(platformUsers).set({mfaFailedAttempts:n,mfaLockedUntil:n>=5?new Date(Date.now()+900000):null,updatedAt:new Date()}).where(eq(platformUsers.id,u.id)); await AuditService.record({action:'platform_staff_mfa_verification_denied',targetType:'auth',targetId:u.id,result:'denied',ipAddress:req.clientIp,userAgent:req.headers['user-agent'],details:{attempts:n}}).catch(()=>{}); }
+function lockMfa(res:Response){res.setHeader('Retry-After','900');return res.status(429).json({error:'MFA_TEMPORARILY_LOCKED',message:'MFA verification is locked for 15 minutes after repeated failures.'});}
+async function createMfaSession(u:any,req:ExtendedRequest,res:Response,recoveryCodes?:string[]) { const db=getDb(); if(!db)throw new Error('DATABASE_UNAVAILABLE'); const now=new Date(), id='ses_'+crypto.randomUUID(); const {token:rt,hash,expiresAt}=generateRefreshToken(); const at=signAccessToken({sub:u.id,email:u.email,role:u.platformRole,isPlatformStaff:true,sessionId:id}); await db.insert(platformSessions).values({id,userId:u.id,refreshTokenHash:hash,userAgent:req.headers['user-agent']||null,ipAddress:req.clientIp||null,expiresAt,isRevoked:false,mfaVerifiedAt:now,mfaStepUpUntil:new Date(now.getTime()+300000)}); await db.update(platformUsers).set({lastLoginAt:now,updatedAt:now}).where(eq(platformUsers.id,u.id)); res.cookie(COOKIE_NAMES.ACCESS_TOKEN,at,getAccessTokenCookieOptions());res.cookie(COOKIE_NAMES.REFRESH_TOKEN,rt,getRefreshTokenCookieOptions());clearChallenge(res);res.setHeader('Cache-Control','no-store'); await AuditService.record({actor:{actorId:u.id,actorEmail:u.email,actorPlatformRole:u.platformRole},action:'platform_staff_logged_in_mfa_verified',targetType:'session',targetId:id,result:'success',ipAddress:req.clientIp,userAgent:req.headers['user-agent']}).catch(()=>{}); return {success:true,user:{id:u.id,email:u.email,fullName:u.fullName,platformRole:u.platformRole,isPlatformStaff:true,mfaEnabled:true,permissions:getPermissionsForRole(u.platformRole as PlatformRole),isDatabaseConfigured:true},...(recoveryCodes?{recoveryCodes}:{})};}
+
+router.post('/mfa/enroll',async(req:ExtendedRequest,res:Response)=>{
+ const uid=challengeUserId(req);if(!uid){clearChallenge(res);return res.status(401).json({error:'MFA_CHALLENGE_EXPIRED',message:'Sign in again to restart enrollment.'});}if(!isDatabaseConfigured())return res.status(503).json({error:'DATABASE_REQUIRED',message:'MFA requires PostgreSQL.'});
+ try{const db=getDb();if(!db)return res.status(503).json({error:'DATABASE_UNAVAILABLE',message:'MFA database unavailable.'});encryptionKey();const rows=await db.select().from(platformUsers).where(eq(platformUsers.id,uid)).limit(1);const u=rows[0];if(!u||!u.isActive||!u.isPlatformStaff){clearChallenge(res);return res.status(403).json({error:'ACCOUNT_DISABLED',message:'Platform staff account unavailable.'});}if(u.mfaEnabled||!u.mfaPendingSecretEncrypted)return res.status(409).json({error:'MFA_SETUP_NOT_AVAILABLE',message:'Start a fresh login to configure MFA.'});if(isLocked(u))return lockMfa(res);const step=matchingTotpStep(decryptSecret(u.mfaPendingSecretEncrypted),String(req.body?.code||'').trim());if(step===null){await failMfa(db,u,req);return Number(u.mfaFailedAttempts||0)+1>=5?lockMfa(res):res.status(401).json({error:'INVALID_MFA_CODE',message:'Authenticator code invalid or expired.'});}const recovery=newRecoveryCodes();const hashes=recovery.map(recoveryHash);const saved=await db.update(platformUsers).set({mfaEnabled:true,mfaSecretEncrypted:u.mfaPendingSecretEncrypted,mfaPendingSecretEncrypted:null,mfaRecoveryCodeHashes:JSON.stringify(hashes),mfaLastTotpStep:step,mfaFailedAttempts:0,mfaLockedUntil:null,updatedAt:new Date()}).where(and(eq(platformUsers.id,u.id),eq(platformUsers.mfaEnabled,false),eq(platformUsers.mfaPendingSecretEncrypted,u.mfaPendingSecretEncrypted))).returning({id:platformUsers.id});if(!saved.length)return res.status(409).json({error:'MFA_ENROLLMENT_CONFLICT',message:'MFA enrollment changed; sign in again.'});await db.update(platformSessions).set({isRevoked:true}).where(eq(platformSessions.userId,u.id));await AuditService.recordSensitive({actor:{actorId:u.id,actorEmail:u.email,actorPlatformRole:u.platformRole},action:'platform_staff_mfa_enabled',targetType:'staff',targetId:u.id,result:'success',ipAddress:req.clientIp,userAgent:req.headers['user-agent'],details:{recoveryCodesIssued:recovery.length}});return res.json(await createMfaSession({...u,mfaEnabled:true},req,res,recovery));}catch(err:any){console.error('[MFA] Enrollment failed:',err.message);return res.status(503).json({error:'MFA_ENROLLMENT_FAILED',message:'MFA enrollment could not be completed safely.'});}
+});
+
+router.post('/mfa/verify',async(req:ExtendedRequest,res:Response)=>{
+ const uid=challengeUserId(req);if(!uid){clearChallenge(res);return res.status(401).json({error:'MFA_CHALLENGE_EXPIRED',message:'Sign in again to restart MFA verification.'});}if(!isDatabaseConfigured())return res.status(503).json({error:'DATABASE_REQUIRED',message:'MFA requires PostgreSQL.'});
+ try{const db=getDb();if(!db)return res.status(503).json({error:'DATABASE_UNAVAILABLE',message:'MFA database unavailable.'});encryptionKey();const rows=await db.select().from(platformUsers).where(eq(platformUsers.id,uid)).limit(1);const u=rows[0];if(!u||!u.isActive||!u.isPlatformStaff){clearChallenge(res);return res.status(403).json({error:'ACCOUNT_DISABLED',message:'Platform staff account unavailable.'});}if(!u.mfaEnabled||!u.mfaSecretEncrypted)return res.status(403).json({error:'MFA_ENROLLMENT_REQUIRED',message:'Complete MFA enrollment first.'});if(isLocked(u))return lockMfa(res);const code=String(req.body?.code||'').trim();const step=matchingTotpStep(decryptSecret(u.mfaSecretEncrypted),code);let accepted=false;
+ if(step!==null&&(u.mfaLastTotpStep==null||step>Number(u.mfaLastTotpStep))){const condition=u.mfaLastTotpStep==null?isNull(platformUsers.mfaLastTotpStep):eq(platformUsers.mfaLastTotpStep,u.mfaLastTotpStep);const upd=await db.update(platformUsers).set({mfaLastTotpStep:step,mfaFailedAttempts:0,mfaLockedUntil:null,updatedAt:new Date()}).where(and(eq(platformUsers.id,u.id),condition)).returning({id:platformUsers.id});accepted=upd.length>0;}else if(u.mfaRecoveryCodeHashes){let hashes:string[]=[];try{const v=JSON.parse(u.mfaRecoveryCodeHashes);if(Array.isArray(v))hashes=v.filter((x:unknown)=>typeof x==='string');}catch{hashes=[];}const h=recoveryHash(code);if(hashes.includes(h)){const upd=await db.update(platformUsers).set({mfaRecoveryCodeHashes:JSON.stringify(hashes.filter(x=>x!==h)),mfaFailedAttempts:0,mfaLockedUntil:null,updatedAt:new Date()}).where(and(eq(platformUsers.id,u.id),eq(platformUsers.mfaRecoveryCodeHashes,u.mfaRecoveryCodeHashes))).returning({id:platformUsers.id});accepted=upd.length>0;}}
+ if(!accepted){await failMfa(db,u,req);return Number(u.mfaFailedAttempts||0)+1>=5?lockMfa(res):res.status(401).json({error:'INVALID_MFA_CODE',message:'Authenticator or recovery code invalid, expired, or already used.'});}return res.json(await createMfaSession(u,req,res));}catch(err:any){console.error('[MFA] Verification failed:',err.message);return res.status(503).json({error:'MFA_VERIFICATION_FAILED',message:'MFA verification could not be completed safely.'});}
+});
+
+router.post('/mfa/step-up',requirePlatformAuth,async(req:ExtendedRequest,res:Response)=>{const ctx=req.securityContext!;if(!isDatabaseConfigured())return res.status(503).json({error:'DATABASE_REQUIRED',message:'Step-up requires PostgreSQL.'});try{const db=getDb();if(!db)return res.status(503).json({error:'DATABASE_UNAVAILABLE',message:'MFA database unavailable.'});const rows=await db.select().from(platformUsers).where(eq(platformUsers.id,ctx.actorId)).limit(1);const u=rows[0];if(!u?.mfaEnabled||!u.mfaSecretEncrypted)return res.status(403).json({error:'MFA_REQUIRED',message:'Enabled authenticator required.'});if(isLocked(u))return lockMfa(res);const step=matchingTotpStep(decryptSecret(u.mfaSecretEncrypted),String(req.body?.code||'').trim());if(step===null||(u.mfaLastTotpStep!=null&&step<=Number(u.mfaLastTotpStep))){await failMfa(db,u,req);return Number(u.mfaFailedAttempts||0)+1>=5?lockMfa(res):res.status(401).json({error:'INVALID_MFA_CODE',message:'Use a new current authenticator code.'});}const condition=u.mfaLastTotpStep==null?isNull(platformUsers.mfaLastTotpStep):eq(platformUsers.mfaLastTotpStep,u.mfaLastTotpStep);const upd=await db.update(platformUsers).set({mfaLastTotpStep:step,mfaFailedAttempts:0,mfaLockedUntil:null,updatedAt:new Date()}).where(and(eq(platformUsers.id,u.id),condition)).returning({id:platformUsers.id});if(!upd.length)return res.status(401).json({error:'MFA_CODE_REPLAYED',message:'Authenticator code already used.'});const until=new Date(Date.now()+300000);const sess=await db.update(platformSessions).set({mfaStepUpUntil:until}).where(and(eq(platformSessions.id,ctx.sessionId),eq(platformSessions.userId,ctx.actorId),eq(platformSessions.isRevoked,false))).returning({id:platformSessions.id});if(!sess.length)return res.status(401).json({error:'SESSION_REVOKED',message:'Session is no longer active.'});await AuditService.recordSensitive({actor:ctx,action:'platform_staff_mfa_step_up_verified',targetType:'session',targetId:ctx.sessionId,result:'success',ipAddress:req.clientIp,userAgent:req.headers['user-agent'],details:{validForSeconds:300}});return res.json({success:true,stepUpValidForSeconds:300});}catch(err:any){console.error('[MFA] Step-up failed:',err.message);return res.status(503).json({error:'MFA_STEP_UP_FAILED',message:'Step-up verification could not be completed safely.'});}});
 
 export const REFRESH_GRACE_WINDOW_MS = 10_000;
 
@@ -516,6 +481,7 @@ router.post('/refresh', async (req: ExtendedRequest, res: Response) => {
 
     // 5. Verify authoritative staff account in database
     const user = await store.getUserById(session.userId);
+    if (user && (user.mfaEnabled === false || (user.mfaEnabled === true && !session.mfaVerifiedAt))) { if(store.revokeSession) await store.revokeSession(session.id); res.clearCookie(COOKIE_NAMES.ACCESS_TOKEN,getClearCookieOptions()); res.clearCookie(COOKIE_NAMES.REFRESH_TOKEN,getClearCookieOptions()); return res.status(401).json({error:'MFA_REQUIRED',message:'This session has not completed verified MFA. Sign in again.'}); }
     if (!user || !user.isActive || !user.isPlatformStaff) {
       if (store.revokeSession) {
         await store.revokeSession(session.id);
@@ -779,6 +745,7 @@ router.post('/logout', async (req: ExtendedRequest, res: Response) => {
   // 4. Consistently clear cookies with exact same options
   res.clearCookie(COOKIE_NAMES.ACCESS_TOKEN, getClearCookieOptions());
   res.clearCookie(COOKIE_NAMES.REFRESH_TOKEN, getClearCookieOptions());
+  clearChallenge(res);
 
   return res.json({ success: true, message: 'Logged out successfully. Platform session revoked.' });
 });
@@ -796,6 +763,7 @@ router.get('/me', requirePlatformAuth, async (req: ExtendedRequest, res: Respons
       fullName: context.actorName,
       platformRole: context.actorPlatformRole,
       isPlatformStaff: true,
+      mfaEnabled: true,
       permissions: context.permissions,
       isImpersonating: context.isImpersonating,
       actingAs: context.actingAs || null,

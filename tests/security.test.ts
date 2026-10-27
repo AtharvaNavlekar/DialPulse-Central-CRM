@@ -173,6 +173,28 @@ export async function runSecurityTests() {
     console.log('  ✓ Test A: valid platform user + valid DB session succeeds');
   }
 
+  // Test A1: non-enrolled users cannot use platform APIs
+  {
+    const store = new MockAuthoritativeStore();
+    store.users.set('usr_mfa_off', { id: 'usr_mfa_off', email: 'staff@example.com', fullName: 'MFA Off', platformRole: 'platform_admin', isPlatformStaff: true, isActive: true, mfaEnabled: false });
+    store.sessions.set('ses_mfa_off', { id: 'ses_mfa_off', userId: 'usr_mfa_off', isRevoked: false, expiresAt: new Date(Date.now() + 3600000), mfaVerifiedAt: new Date() });
+    const token = signAccessToken({ sub: 'usr_mfa_off', email: 'staff@example.com', role: 'platform_admin', sessionId: 'ses_mfa_off' });
+    const result = await validatePlatformAuthorization(token, {}, store);
+    assert.equal(result.success, false);
+    if (!result.success) assert.equal(result.error, 'MFA_ENROLLMENT_REQUIRED');
+  }
+
+  // Test A2: legacy sessions with no server-recorded MFA proof must be rejected for enrolled staff
+  {
+    const store = new MockAuthoritativeStore();
+    store.users.set('usr_legacy_mfa', { id: 'usr_legacy_mfa', email: 'staff@example.com', fullName: 'Legacy MFA Session', platformRole: 'platform_admin', isPlatformStaff: true, isActive: true, mfaEnabled: true });
+    store.sessions.set('ses_legacy_mfa', { id: 'ses_legacy_mfa', userId: 'usr_legacy_mfa', isRevoked: false, expiresAt: new Date(Date.now() + 3600000), mfaVerifiedAt: null });
+    const token = signAccessToken({ sub: 'usr_legacy_mfa', email: 'staff@example.com', role: 'platform_admin', sessionId: 'ses_legacy_mfa' });
+    const result = await validatePlatformAuthorization(token, {}, store);
+    assert.equal(result.success, false);
+    if (!result.success) assert.equal(result.error, 'MFA_REQUIRED');
+  }
+
   // Test B: Valid JWT + missing DB user is rejected
   {
     const store = new MockAuthoritativeStore();

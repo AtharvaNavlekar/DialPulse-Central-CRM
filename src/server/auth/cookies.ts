@@ -1,6 +1,7 @@
 export const COOKIE_NAMES = {
   ACCESS_TOKEN: 'dp_central_access_token',
   REFRESH_TOKEN: 'dp_central_refresh_token',
+  MFA_CHALLENGE: 'dp_central_mfa_challenge',
 } as const;
 
 export const COOKIE_EXPIRY_MS = {
@@ -39,3 +40,6 @@ export function getClearCookieOptions() {
     path: '/',
   };
 }
+
+export function getMfaChallengeCookieOptions() { return { httpOnly:true, secure:process.env.NODE_ENV==='production', sameSite:'strict' as const, path:'/api/auth', maxAge:5*60*1000 }; }
+export function getClearMfaChallengeCookieOptions() { return { httpOnly:true, secure:process.env.NODE_ENV==='production', sameSite:'strict' as const, path:'/api/auth' }; }

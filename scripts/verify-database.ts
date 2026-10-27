@@ -92,6 +92,7 @@ async function main() {
       const hasBase = entries.some((e: any) => e.idx === 0);
       const hasSessionPrevHash = entries.some((e: any) => e.tag?.includes('previous_refresh_token_hash') || e.idx === 1);
       const hasSessionReplayHistory = entries.some((e: any) => e.tag?.includes('session_replay_history') || e.idx === 2);
+      const hasMfaStepUp = entries.some((e: any) => e.tag?.includes('platform_mfa_step_up') || e.idx === 3);
 
       if (!hasBase) {
         console.error(`❌ Migration journal missing baseline migration (idx 0).`);
@@ -106,7 +107,8 @@ async function main() {
         failures++;
       }
 
-      if (hasBase && hasSessionPrevHash && hasSessionReplayHistory) {
+      if (!hasMfaStepUp) { console.error('❌ Migration journal missing MFA/step-up migration (idx 3).'); failures++; }
+      if (hasBase && hasSessionPrevHash && hasSessionReplayHistory && hasMfaStepUp) {
         console.log(`  ✓ Migration journal verified: ${entries.length} versioned migration(s) tracked.`);
       }
 
@@ -126,6 +128,10 @@ async function main() {
           console.log(`  ✓ Versioned SQL migration verified: ${sessionMigrationSql}`);
         }
       }
+
+      const mfaMigrationSql = migrationFiles.find((f) => f.includes('0003') || f.includes('platform_mfa_step_up'));
+      if (!mfaMigrationSql) { console.error('❌ MFA migration SQL not found.'); failures++; }
+      else { const mfaSql = fs.readFileSync(path.resolve(drizzleDir, mfaMigrationSql), 'utf-8'); if (!mfaSql.includes('mfa_secret_encrypted') || !mfaSql.includes('mfa_verified_at') || !mfaSql.includes('mfa_step_up_until')) { console.error('❌ MFA migration missing required columns.'); failures++; } else console.log('  ✓ MFA/step-up migration verified: ' + mfaMigrationSql); }
 
       const replayMigrationSql = migrationFiles.find((f) => f.includes('0002') || f.includes('session_replay_history'));
       if (!replayMigrationSql) {

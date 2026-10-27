@@ -12,7 +12,7 @@
 | Phase 01B | Cookie-only browser auth and refresh-token rotation | Complete implementation | [Commit](https://github.com/AtharvaNavlekar/DialPulse-Central-CRM/commit/a58c0b8a972ca31bc132ba28e4ff50c4f991cb6c) |
 | Phase 01B.1 | Atomic conditional rotation, CSRF closure and versioned migrations | Complete implementation | [Commit](https://github.com/AtharvaNavlekar/DialPulse-Central-CRM/commit/50735c5af5535cef37db2e0316d7f763ba39d86c) |
 | Phase 01B.2 | Bounded replay history, concurrency policy, safe schema adoption and live PostgreSQL integration | **Complete — CI verified** | [Initial implementation](https://github.com/AtharvaNavlekar/DialPulse-Central-CRM/commit/e70d8e4a7aecf223bc354c5711aaf0c869274006) · [Constraint/history hardening](https://github.com/AtharvaNavlekar/DialPulse-Central-CRM/commit/9d88546686426f14b4220bc8b18ceff1776b9203) · [Passing live PostgreSQL CI](https://github.com/AtharvaNavlekar/DialPulse-Central-CRM/actions/runs/40553848777) |
-| Phase 01C | Real MFA, phishing-resistant passkeys/security keys where feasible, and step-up verification | **Next** | Implement server-verified enrollment/challenge/recovery and step-up tests; no simulated OTP. Keep SSO as the following identity slice. |
+| Phase 01C | Real TOTP MFA, recovery codes and server-enforced step-up | **In progress — verification pending** | Branch `security/phase-01c-mfa-step-up` implements challenge-based TOTP enrollment/login, encrypted secrets, one-time recovery codes and step-up gates. WebAuthn/passkeys remain follow-up work. |
 | Phase 01D | SSO/OIDC integration boundary and staff identity lifecycle | Planned | Provider configuration, issuer/audience/state/nonce validation, account linking and deprovisioning tests |
 | Phase 02 | Reliable audit, OpenTelemetry and incident workflow | High priority | Durable audit semantics, trace/log correlation, incident owner, severity, evidence preservation and reporting runbook |
 | Phase 03 | Data protection governance | High priority | Inventory/classification, purpose and lawful-basis registry, consent where applicable, data subject request/grievance workflows, retention and legal holds |
@@ -53,3 +53,11 @@ The DPDP commencement notification schedules the main substantive processing and
 Each phase is a sequence of small, reviewable vertical slices. Every Class C slice requires an explicit requirement, design, threat analysis, data-flow and tenant-isolation review, fail-closed behavior, audit behavior, rollback plan, canonical verification command, security tests, database checks where relevant, and successful GitHub Actions before proceeding.
 
 Do not call a control “compliant” merely because a setting or schema field exists. Use the evidence statuses in [Compliance Status](COMPLIANCE_STATUS.md).
+
+
+## Phase 01C deployment requirements
+
+- Provision a stable 32-byte base64 `MFA_ENCRYPTION_KEY` in the deployment secret manager; do not commit a live key. Losing it requires controlled MFA reset/re-enrollment.
+- Apply migration `0003_platform_mfa_step_up` before deploying the new application code.
+- Validate first-time enrollment, subsequent TOTP login, one-use recovery codes, lockout, refresh/session invalidation, and step-up gates in a controlled environment.
+- Phase 01C is not complete until CI passes and production deployment/key recovery procedures are tested. WebAuthn/passkeys and MFA for users of the separate Client CRM are not included in this slice.

@@ -1,6 +1,6 @@
 import { Router, Response } from 'express';
 import { ExtendedRequest } from '../middleware/request-context.ts';
-import { requirePlatformAuth } from '../middleware/auth.ts';
+import { requirePlatformAuth, requireRecentMfa } from '../middleware/auth.ts';
 import { PLATFORM_PERMISSIONS } from '../policies/permissions.ts';
 import { AuditService } from '../audit/service.ts';
 import { requirePlatformPermission as requirePerm } from '../middleware/authorize.ts';
@@ -36,6 +36,7 @@ router.post(
   '/request',
   requirePlatformAuth,
   requirePerm(PLATFORM_PERMISSIONS.IMPERSONATION_START),
+  requireRecentMfa,
   async (req: ExtendedRequest, res: Response) => {
     const { targetTenantId, targetUserId, reason, ticketReference } = req.body || {};
 
