@@ -2,8 +2,12 @@ import { PlatformUser, OverviewData, Tenant, AuditRecord, SecurityEventItem, Hea
 
 export class ApiClient {
   private refreshPromise: Promise<boolean> | null = null;
+  private stepUpHandler: (() => Promise<boolean>) | null = null;
+  setStepUpHandler(handler: (() => Promise<boolean>) | null): void { this.stepUpHandler = handler; }
 
-  private async request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
+  private async request<T>(endpoint: string, options: RequestInit = {}): Promise<T> { return this.requestInternal<T>(endpoint, options, false); }
+
+  private async requestInternal<T>(endpoint: string, options: RequestInit, stepUpRetryUsed: boolean): Promise<T> {
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
       'X-Requested-With': 'XMLHttpRequest',
@@ -35,20 +39,20 @@ export class ApiClient {
 
     const data = await response.json().catch(() => null);
 
+    if (!response.ok && response.status === 403 && data?.error === 'STEP_UP_REQUIRED' && !stepUpRetryUsed && this.stepUpHandler) {
+      const verified = await this.stepUpHandler();
+      if (verified) return this.requestInternal<T>(endpoint, options, true);
+    }
     if (!response.ok) {
       const errorMsg = data?.message || data?.error || `Request failed with status ${response.status}`;
-      const err = new Error(errorMsg) as any;
-      err.status = response.status;
-      err.code = data?.error;
-      throw err;
+      const err = new Error(errorMsg) as any; err.status = response.status; err.code = data?.error; throw err;
     }
-
     return data as T;
   }
 
   // Auth Endpoints
-  async login(email: string, password: string): Promise<{ success: boolean; user: PlatformUser }> {
-    return this.request<{ success: boolean; user: PlatformUser }>('/api/auth/login', {
+  async login(email: string, password: string): Promise<{ success: boolean; user?: PlatformUser; mfaRequired?: boolean; mfaEnrollmentRequired?: boolean; secret?: string; provisioningUri?: string }> {
+    return this.request<{ success: boolean; user?: PlatformUser; mfaRequired?: boolean; mfaEnrollmentRequired?: boolean; secret?: string; provisioningUri?: string }>('/api/auth/login', {
       method: 'POST',
       body: JSON.stringify({ email, password }),
     });
@@ -81,9 +85,16 @@ export class ApiClient {
     return this.refreshPromise;
   }
 
-  async logout(): Promise<void> {
-    await this.request('/api/auth/logout', { method: 'POST' });
+  async enrollMfa(code: string): Promise<{ success: boolean; user: PlatformUser; recoveryCodes: string[] }> {
+    return this.request('/api/auth/mfa/enroll', { method: 'POST', body: JSON.stringify({ code }) });
   }
+  async verifyMfa(code: string): Promise<{ success: boolean; user: PlatformUser }> {
+    return this.request('/api/auth/mfa/verify', { method: 'POST', body: JSON.stringify({ code }) });
+  }
+  async verifyStepUpMfa(code: string): Promise<{ success: boolean; stepUpValidForSeconds: number }> {
+    return this.request('/api/auth/mfa/step-up', { method: 'POST', body: JSON.stringify({ code }) });
+  }
+  async logout(): Promise<void> { await this.request('/api/auth/logout', { method: 'POST' }); }
 
   async getCurrentUser(): Promise<PlatformUser> {
     const res = await this.request<{ user: PlatformUser }>('/api/auth/me');
