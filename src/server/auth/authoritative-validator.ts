@@ -14,6 +14,12 @@ export interface AuthoritativeUserRecord {
   isPlatformStaff: boolean;
   isActive: boolean;
   mfaEnabled?: boolean;
+  mfaSecretEncrypted?: string | null;
+  mfaPendingSecretEncrypted?: string | null;
+  mfaRecoveryCodeHashes?: string | null;
+  mfaLastTotpStep?: number | null;
+  mfaFailedAttempts?: number;
+  mfaLockedUntil?: Date | string | null;
 }
 
 export interface TokenFamilyEntry {
@@ -28,6 +34,8 @@ export interface AuthoritativeSessionRecord {
   previousRefreshTokenHash?: string | null;
   lastRotatedAt?: Date | string | null;
   tokenFamilyHistory?: string | null;
+  mfaVerifiedAt?: Date | string | null;
+  mfaStepUpUntil?: Date | string | null;
   isRevoked: boolean;
   expiresAt: Date | string;
 }
@@ -106,6 +114,8 @@ export class PostgresAuthoritativeDataStore implements AuthoritativeDataStore {
       previousRefreshTokenHash: s.previousRefreshTokenHash,
       lastRotatedAt: s.lastRotatedAt,
       tokenFamilyHistory: s.tokenFamilyHistory,
+      mfaVerifiedAt: s.mfaVerifiedAt,
+      mfaStepUpUntil: s.mfaStepUpUntil,
       isRevoked: s.isRevoked,
       expiresAt: s.expiresAt,
     };
@@ -130,6 +140,8 @@ export class PostgresAuthoritativeDataStore implements AuthoritativeDataStore {
       previousRefreshTokenHash: s.previousRefreshTokenHash,
       lastRotatedAt: s.lastRotatedAt,
       tokenFamilyHistory: s.tokenFamilyHistory,
+      mfaVerifiedAt: s.mfaVerifiedAt,
+      mfaStepUpUntil: s.mfaStepUpUntil,
       isRevoked: s.isRevoked,
       expiresAt: s.expiresAt,
     };
@@ -159,6 +171,8 @@ export class PostgresAuthoritativeDataStore implements AuthoritativeDataStore {
       previousRefreshTokenHash: s.previousRefreshTokenHash,
       lastRotatedAt: s.lastRotatedAt,
       tokenFamilyHistory: s.tokenFamilyHistory,
+      mfaVerifiedAt: s.mfaVerifiedAt,
+      mfaStepUpUntil: s.mfaStepUpUntil,
       isRevoked: s.isRevoked,
       expiresAt: s.expiresAt,
     };
@@ -670,6 +684,10 @@ export async function validatePlatformAuthorization(
     };
   }
 
+  if (user.mfaEnabled === false) {
+    return { success: false, status: 403, error: 'MFA_ENROLLMENT_REQUIRED', message: 'Platform staff must enroll in MFA before accessing privileged APIs.' };
+  }
+
   // Authoritative DB Identity / Role Boundary Segregation:
   // Tenant/non-platform access must still be rejected using authoritative DB identity/role.
   if (isTenantRole(user.platformRole as any)) {
@@ -742,6 +760,10 @@ export async function validatePlatformAuthorization(
       error: 'SESSION_EXPIRED',
       message: 'Platform session has expired. Please log in again.',
     };
+  }
+
+  if (user.mfaEnabled === true && !session.mfaVerifiedAt) {
+    return { success: false, status: 403, error: 'MFA_REQUIRED', message: 'This session has not completed verified MFA. Please sign in again.' };
   }
 
   // 6. Query Authoritative Role Permissions from Database
