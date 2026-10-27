@@ -30,6 +30,8 @@ import {
   validateSchemaCompatibility,
   EXPECTED_BASELINE_TABLES,
   EXPECTED_REQUIRED_COLUMNS,
+  EXPECTED_BASELINE_PRIMARY_KEYS,
+  EXPECTED_BASELINE_FOREIGN_KEYS,
 } from '../src/server/db/migrator.ts';
 import { ApiClient } from '../src/app/api.ts';
 
@@ -1408,6 +1410,8 @@ export async function runSessionLifecycleTests() {
       class MockPgMigrationClient {
         public tables: Set<string> = new Set();
         public columns: Map<string, Set<string>> = new Map();
+        public primaryKeys: Array<{ table_name: string; column_name: string; ordinal_position: number }> = [];
+        public foreignKeys: Array<{ table_name: string; column_name: string; foreign_table_name: string; foreign_column_name: string }> = [];
         public migrationsTable: Array<{ id: number; hash: string; created_at: number }> = [];
         public userData: Map<string, any> = new Map();
         public inTransaction: boolean = false;
@@ -1426,6 +1430,14 @@ export async function runSessionLifecycleTests() {
           if (trimmed === 'ROLLBACK') {
             this.inTransaction = false;
             return { rows: [] };
+          }
+
+          if (trimmed.includes('information_schema.table_constraints') && trimmed.includes("constraint_type = 'PRIMARY KEY'")) {
+            return { rows: [...this.primaryKeys] };
+          }
+
+          if (trimmed.includes('information_schema.table_constraints') && trimmed.includes("constraint_type = 'FOREIGN KEY'")) {
+            return { rows: [...this.foreignKeys] };
           }
 
           if (trimmed.includes('information_schema.tables')) {
@@ -1523,6 +1535,16 @@ export async function runSessionLifecycleTests() {
           existingClient.columns.get(tbl)!.add(c);
         }
       }
+      // Model the baseline primary/foreign key metadata returned by PostgreSQL.
+      existingClient.primaryKeys = Object.entries(EXPECTED_BASELINE_PRIMARY_KEYS).flatMap(([table_name, columns]) =>
+        columns.map((column_name, index) => ({ table_name, column_name, ordinal_position: index + 1 }))
+      );
+      existingClient.foreignKeys = EXPECTED_BASELINE_FOREIGN_KEYS.map((fk) => ({
+        table_name: fk.table,
+        column_name: fk.column,
+        foreign_table_name: fk.refTable,
+        foreign_column_name: fk.refColumn,
+      }));
       // Add existing production user data
       existingClient.userData.set('usr_prod_admin', { email: 'admin@prod.com', full_name: 'Prod Admin' });
 
