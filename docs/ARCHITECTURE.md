@@ -35,7 +35,7 @@ See the source diagram: [Target architecture Mermaid](architecture/central-crm-t
 | Cookie-based staff sessions and token rotation | Implemented; CI-tested | Continue reviewing rotation/replay behavior and production operations |
 | Platform RBAC from PostgreSQL | Implemented | Just-in-time access, approval and separation of duties remain planned |
 | MFA / step-up / SSO | Not implemented | Implement real challenges; do not infer MFA from a database flag |
-| Migration safety | Implemented in code; live PostgreSQL integration gate added | Require passing live PostgreSQL integration tests for every change |
+| Migration safety | Live PostgreSQL CI verified | Fresh install, compatible existing-schema adoption, data preservation, idempotency, checksums/history integrity and incompatible-schema rejection pass in PostgreSQL 16 CI; production deployment and backup/restore remain unverified |
 | Audit | Partial | Durable failure behavior across all sensitive actions, integrity protection and retention |
 | Incident response / CERT-In readiness | Partial | Ownership, classification, six-hour clock for applicable incidents, evidence and reporting workflow |
 | Data inventory / purpose / consent / rights | Not implemented | Build governance layer or integrate with Client CRM responsibility owner |

@@ -91,7 +91,7 @@ Tenant roles (`owner`, `cto`, `it`, `tl_head`, `tl`, `telecaller`) are strictly 
 | **Application & Shell** | `REAL` | React/Vite operator shell and white/light design system. |
 | **Authentication & Sessions** | `PARTIAL` | Cookie-only sessions, rotation/replay controls and server-side validation; real MFA, step-up and SSO are not implemented. |
 | **Platform RBAC** | `REAL` | Runtime role-permission mappings are loaded from PostgreSQL and checked server-side; JIT approval workflow remains planned. |
-| **Database Foundation & Migrations** | `PARTIAL` | PostgreSQL/Drizzle schema, versioned migrations and safe-adoption runner; live migration coverage is being added to CI. |
+| **Database Foundation & Migrations** | `PARTIAL` | PostgreSQL/Drizzle schema, versioned migrations and schema-adoption validation; live PostgreSQL migration tests pass in CI. Production deployment and backup/restore evidence remain separate gates. |
 | **Overview Page / Health** | `PARTIAL` | Health and database checks exist; full correlated logs/metrics/traces and SLOs are not implemented. |
 | **Tenant Management** | `PARTIAL` | Database-backed lifecycle endpoints and filters exist; end-to-end tenant provisioning and data-plane isolation are not verified. |
 | **Global Audit Trail** | `PARTIAL` | PostgreSQL audit persistence and structured events exist; append-only/tamper-evident integrity and uniform failure enforcement are not complete. |
@@ -161,7 +161,7 @@ Central CRM uses PostgreSQL with Drizzle ORM (`drizzle-kit`). All migration comm
   ```bash
   npm run db:migrate
   ```
-  This project runner validates baseline tables, columns, primary keys and foreign keys before adopting an existing schema; back up the target database and review the result before production use.
+  This project runner validates baseline tables, columns, primary keys, foreign keys and required unique constraints before adopting an existing schema; it rejects gaps or altered checksums in migration history. Back up the target database and follow an approved deployment/change procedure before production use.
 
 * **Live migration integration tests** (requires a disposable PostgreSQL test server and explicit database-creation permission):
   ```bash

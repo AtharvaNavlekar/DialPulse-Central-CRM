@@ -11,8 +11,8 @@
 | Phase 01A | Remove shared default staff credentials; isolate development credentials and seeding | Complete | [Commit](https://github.com/AtharvaNavlekar/DialPulse-Central-CRM/commit/ba81fb49498582a634823a0dc50806496e9d5539) |
 | Phase 01B | Cookie-only browser auth and refresh-token rotation | Complete implementation | [Commit](https://github.com/AtharvaNavlekar/DialPulse-Central-CRM/commit/a58c0b8a972ca31bc132ba28e4ff50c4f991cb6c) |
 | Phase 01B.1 | Atomic conditional rotation, CSRF closure and versioned migrations | Complete implementation | [Commit](https://github.com/AtharvaNavlekar/DialPulse-Central-CRM/commit/50735c5af5535cef37db2e0316d7f763ba39d86c) |
-| Phase 01B.2 | Bounded replay history, safe schema adoption, concurrent refresh policy and PostgreSQL integration tests | Active hardening slice | [Initial implementation](https://github.com/AtharvaNavlekar/DialPulse-Central-CRM/commit/e70d8e4a7aecf223bc354c5711aaf0c869274006); close only when the live PostgreSQL CI integration passes |
-| Phase 01C | Real MFA, phishing-resistant passkeys/security keys where feasible, and step-up verification | Next after Phase 01B.2 | Real server-verified challenge and recovery tests; no simulated OTP |
+| Phase 01B.2 | Bounded replay history, concurrency policy, safe schema adoption and live PostgreSQL integration | **Complete — CI verified** | [Initial implementation](https://github.com/AtharvaNavlekar/DialPulse-Central-CRM/commit/e70d8e4a7aecf223bc354c5711aaf0c869274006) · [Constraint/history hardening](https://github.com/AtharvaNavlekar/DialPulse-Central-CRM/commit/9d88546686426f14b4220bc8b18ceff1776b9203) · [Passing live PostgreSQL CI](https://github.com/AtharvaNavlekar/DialPulse-Central-CRM/actions/runs/40553848777) |
+| Phase 01C | Real MFA, phishing-resistant passkeys/security keys where feasible, and step-up verification | **Next** | Implement server-verified enrollment/challenge/recovery and step-up tests; no simulated OTP. Keep SSO as the following identity slice. |
 | Phase 01D | SSO/OIDC integration boundary and staff identity lifecycle | Planned | Provider configuration, issuer/audience/state/nonce validation, account linking and deprovisioning tests |
 | Phase 02 | Reliable audit, OpenTelemetry and incident workflow | High priority | Durable audit semantics, trace/log correlation, incident owner, severity, evidence preservation and reporting runbook |
 | Phase 03 | Data protection governance | High priority | Inventory/classification, purpose and lawful-basis registry, consent where applicable, data subject request/grievance workflows, retention and legal holds |
@@ -20,6 +20,10 @@
 | Phase 05 | Recovery and assurance | Planned | Encrypted backups, tested restoration, access reviews, dependency/vendor review, incident exercises |
 | Phase 06 | Billing, entitlements and progressive feature rollout | Planned | Plan versioning, entitlement consistency, canaries, policy-checked kill switches and rollback |
 | Phase 07 | AI operations copilot | Planned / last | Permission-filtered read-only summaries and runbooks; human approval for consequential actions |
+
+## Phase 01B.2 exit evidence
+
+The current CI run verifies migration behavior against a disposable PostgreSQL 16 service: fresh database migration and no-op rerun; adoption of a schema created from the baseline migration while preserving an existing staff row; checksum-tampering rejection; missing unique-constraint rejection; migration-history gap rejection; and fail-closed rejection of incompatible partial schemas. This proves the tested migration contract, not production backup/restore or the production deployment runbook.
 
 ## Revised compliance-driven priorities
 

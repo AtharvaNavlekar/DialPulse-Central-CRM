@@ -37,6 +37,11 @@ export const PROJECT_SUBSYSTEM_STATUS: SubsystemStatus[] = [
     notes: 'PostgreSQL platform_role_permissions joined with platform_permissions is sole authority. JWT roles never grant authority.',
   },
   {
+    subsystem: 'PostgreSQL Migration & Schema Adoption',
+    status: 'PARTIAL',
+    notes: 'Versioned migrations and schema-adoption checks pass live PostgreSQL CI for fresh install, existing-schema adoption, preserved rows, idempotency, checksum/history integrity and incompatible-schema rejection. Production deployment execution and backup/restore remain unverified.',
+  },
+  {
     subsystem: 'Tenant & Customer Lifecycle Management',
     status: 'PARTIAL',
     notes: 'Tenant listings, suspension, reactivation, search, filtering operational. Tenant workspace provisioner in progress.',
