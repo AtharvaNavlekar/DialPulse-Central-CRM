@@ -9,6 +9,9 @@ if (!process.env.NODE_ENV) {
   process.env.NODE_ENV = 'test';
 }
 
+import { resetConfigCache } from '../src/server/config/env.ts';
+resetConfigCache();
+
 import assert from 'assert';
 import http from 'http';
 import express from 'express';

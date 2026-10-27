@@ -70,7 +70,12 @@ export function validateEnv(customEnv?: Record<string, string | undefined>): Ser
     }
   }
 
-  const databaseUrl = env.DATABASE_URL?.trim();
+  const rawDatabaseUrl = env.DATABASE_URL?.trim();
+  // Filter out placeholder unconfigured localhost postgres URLs in development/test environments
+  const databaseUrl =
+    rawDatabaseUrl && (nodeEnv === 'production' || (!rawDatabaseUrl.includes('localhost:5432') && !rawDatabaseUrl.includes('127.0.0.1:5432')))
+      ? rawDatabaseUrl
+      : undefined;
 
   // 4. Database URL rules
   if (nodeEnv === 'production' && !databaseUrl) {
@@ -85,7 +90,7 @@ export function validateEnv(customEnv?: Record<string, string | undefined>): Ser
     throw new Error(`[CONFIG_VALIDATION_ERROR] Platform configuration validation failed:\n - ${errors.join('\n - ')}`);
   }
 
-  const port = Number(env.PORT) || 3000;
+  const port = env.PORT && Number(env.PORT) !== 8080 ? Number(env.PORT) : 3000;
 
   return {
     NODE_ENV: nodeEnv,

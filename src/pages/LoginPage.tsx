@@ -27,8 +27,11 @@ export const LoginPage: React.FC = () => {
     }
   };
 
-  const handleSelectEmail = (targetEmail: string) => {
+  const handleSelectEmail = (targetEmail: string, devPassword?: string) => {
     setEmail(targetEmail);
+    if (devPassword) {
+      setPassword(devPassword);
+    }
   };
 
   return (
@@ -106,7 +109,7 @@ export const LoginPage: React.FC = () => {
             <div className="grid grid-cols-1 gap-1.5">
               <button
                 type="button"
-                onClick={() => handleSelectEmail('admin@dialpulse.internal')}
+                onClick={() => handleSelectEmail('admin@dialpulse.internal', 'replace-with-local-dev-admin-password')}
                 className="w-full py-2 px-3 rounded-xl bg-[#F8FAF9] hover:bg-slate-100 border border-slate-200 text-left flex items-center justify-between text-xs text-slate-800 transition-colors group cursor-pointer"
               >
                 <div>
@@ -118,7 +121,7 @@ export const LoginPage: React.FC = () => {
 
               <button
                 type="button"
-                onClick={() => handleSelectEmail('support@dialpulse.internal')}
+                onClick={() => handleSelectEmail('support@dialpulse.internal', 'replace-with-local-dev-support-password')}
                 className="w-full py-2 px-3 rounded-xl bg-[#F8FAF9] hover:bg-slate-100 border border-slate-200 text-left flex items-center justify-between text-xs text-slate-800 transition-colors group cursor-pointer"
               >
                 <div>
@@ -130,7 +133,7 @@ export const LoginPage: React.FC = () => {
 
               <button
                 type="button"
-                onClick={() => handleSelectEmail('security@dialpulse.internal')}
+                onClick={() => handleSelectEmail('security@dialpulse.internal', 'replace-with-local-dev-security-password')}
                 className="w-full py-2 px-3 rounded-xl bg-[#F8FAF9] hover:bg-slate-100 border border-slate-200 text-left flex items-center justify-between text-xs text-slate-800 transition-colors group cursor-pointer"
               >
                 <div>
