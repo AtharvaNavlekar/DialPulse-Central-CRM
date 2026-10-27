@@ -1,4 +1,4 @@
-import { pgTable, varchar, text, boolean, integer, timestamp, index, primaryKey } from 'drizzle-orm/pg-core';
+import { pgTable, varchar, text, boolean, integer, timestamp, index, primaryKey, bigint } from 'drizzle-orm/pg-core';
 
 /**
  * Platform Users / Identities
@@ -14,6 +14,12 @@ export const platformUsers = pgTable('platform_users', {
   isPlatformStaff: boolean('is_platform_staff').default(true).notNull(),
   isActive: boolean('is_active').default(true).notNull(),
   mfaEnabled: boolean('mfa_enabled').default(false).notNull(),
+  mfaSecretEncrypted: text('mfa_secret_encrypted'),
+  mfaPendingSecretEncrypted: text('mfa_pending_secret_encrypted'),
+  mfaRecoveryCodeHashes: text('mfa_recovery_code_hashes'),
+  mfaLastTotpStep: bigint('mfa_last_totp_step', { mode: 'number' }),
+  mfaFailedAttempts: integer('mfa_failed_attempts').default(0).notNull(),
+  mfaLockedUntil: timestamp('mfa_locked_until', { withTimezone: true }),
   lastLoginAt: timestamp('last_login_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
@@ -33,6 +39,8 @@ export const platformSessions = pgTable('platform_sessions', {
   previousRefreshTokenHash: text('previous_refresh_token_hash'),
   lastRotatedAt: timestamp('last_rotated_at', { withTimezone: true }),
   tokenFamilyHistory: text('token_family_history'),
+  mfaVerifiedAt: timestamp('mfa_verified_at', { withTimezone: true }),
+  mfaStepUpUntil: timestamp('mfa_step_up_until', { withTimezone: true }),
   userAgent: text('user_agent'),
   ipAddress: varchar('ip_address', { length: 64 }),
   isRevoked: boolean('is_revoked').default(false).notNull(),
