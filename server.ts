@@ -65,10 +65,16 @@ app.use((err: any, req: express.Request, res: express.Response, _next: express.N
 
 // Frontend Vite Integration
 async function startServer() {
+  const http = await import('http');
+  const httpServer = http.createServer(app);
+
   if (!isProd) {
     const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
-      server: { middlewareMode: true },
+      server: {
+        middlewareMode: true,
+        ws: { server: httpServer },
+      },
       appType: 'spa',
     });
     app.use(vite.middlewares);
@@ -80,7 +86,7 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, '0.0.0.0', () => {
+  httpServer.listen(PORT, '0.0.0.0', () => {
     console.log(`[CENTRAL_CRM] Server listening on http://0.0.0.0:${PORT}`);
     console.log(`[CENTRAL_CRM] Mode: ${config.NODE_ENV}`);
     console.log(
