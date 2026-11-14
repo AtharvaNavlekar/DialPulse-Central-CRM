@@ -1526,8 +1526,8 @@ export async function runSessionLifecycleTests() {
       });
       assert.strictEqual(freshResult.success, true);
       assert.strictEqual(freshResult.mode, 'fresh');
-      assert.strictEqual(freshResult.appliedMigrations.length, 3, 'Fresh migration applies 0000, 0001, 0002');
-      assert.strictEqual(freshClient.migrationsTable.length, 3, 'Records 3 migrations in __drizzle_migrations');
+      assert.strictEqual(freshResult.appliedMigrations.length, 4, 'Fresh migration applies 0000, 0001, 0002, 0003');
+      assert.strictEqual(freshClient.migrationsTable.length, 4, 'Records 4 migrations in __drizzle_migrations');
 
       // Test 21B: Pre-Existing Database Adoption
       const existingClient = new MockPgMigrationClient();
@@ -1566,7 +1566,7 @@ export async function runSessionLifecycleTests() {
       assert.strictEqual(adoptionResult.success, true);
       assert.strictEqual(adoptionResult.mode, 'adoption');
       assert.strictEqual(existingClient.userData.has('usr_prod_admin'), true, 'Existing production user data must be preserved');
-      assert.strictEqual(existingClient.migrationsTable.length, 3, 'Adoption baselines 0000 and applies 0001 and 0002');
+      assert.strictEqual(existingClient.migrationsTable.length, 4, 'Adoption baselines 0000 and applies 0001, 0002, and 0003');
 
       // Test 21C: Idempotency (re-running on up-to-date database)
       const rerunResult = await runDatabaseMigration({

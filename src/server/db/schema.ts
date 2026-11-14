@@ -36,6 +36,8 @@ export const platformSessions = pgTable('platform_sessions', {
   userAgent: text('user_agent'),
   ipAddress: varchar('ip_address', { length: 64 }),
   isRevoked: boolean('is_revoked').default(false).notNull(),
+  mfaVerified: boolean('mfa_verified').default(false).notNull(),
+  stepUpCompletedAt: timestamp('step_up_completed_at', { withTimezone: true }),
   expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [
@@ -189,3 +191,26 @@ export const featureFlags = pgTable('feature_flags', {
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 });
+
+/**
+ * Platform MFA Credentials
+ * Authoritative store for staff TOTP secrets, replay prevention state,
+ * failed-attempt lockout counters, and hashed single-use recovery codes.
+ */
+export const platformMfaCredentials = pgTable('platform_mfa_credentials', {
+  id: varchar('id', { length: 64 }).primaryKey(),
+  userId: varchar('user_id', { length: 64 }).references(() => platformUsers.id, { onDelete: 'cascade' }).notNull().unique(),
+  encryptedSecret: text('encrypted_secret').notNull(),
+  secretIv: varchar('secret_iv', { length: 64 }).notNull(),
+  secretTag: varchar('secret_tag', { length: 64 }).notNull(),
+  recoveryCodeHashes: text('recovery_code_hashes').notNull(), // JSON array of SHA-256 hex strings
+  lastUsedStep: integer('last_used_step'),
+  failedAttempts: integer('failed_attempts').default(0).notNull(),
+  lockedUntil: timestamp('locked_until', { withTimezone: true }),
+  stepUpVerifiedAt: timestamp('step_up_verified_at', { withTimezone: true }),
+  enrolledAt: timestamp('enrolled_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  index('idx_mfa_credentials_user').on(table.userId),
+]);
+

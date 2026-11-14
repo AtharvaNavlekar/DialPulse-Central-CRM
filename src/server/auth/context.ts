@@ -32,6 +32,10 @@ export interface PlatformSecurityContext {
   sessionId: string;
   ipAddress: string;
   userAgent: string;
+
+  // MFA & Step-up Authentication State
+  mfaVerified: boolean;
+  stepUpCompletedAt: Date | string | null;
 }
 
 export interface AccessTokenPayload {
@@ -40,6 +44,9 @@ export interface AccessTokenPayload {
   role?: string;
   isPlatformStaff?: boolean;
   sessionId: string;
+  mfaVerified?: boolean;
+  stepUpCompletedAt?: string | null;
+  purpose?: 'access' | 'mfa_challenge' | 'mfa_enroll';
   iat?: number;
   exp?: number;
 }

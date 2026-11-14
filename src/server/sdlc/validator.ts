@@ -214,6 +214,7 @@ export function validateDatabaseSchemaIntegrity(): ValidationResult {
     { name: 'securityEvents', table: schema.securityEvents },
     { name: 'billingRecords', table: schema.billingRecords },
     { name: 'featureFlags', table: schema.featureFlags },
+    { name: 'platformMfaCredentials', table: schema.platformMfaCredentials },
   ];
 
   for (const { name, table } of tablesToCheck) {
@@ -253,6 +254,20 @@ export function validateDatabaseSchemaIntegrity(): ValidationResult {
         });
         if (!hasUserFk) {
           errors.push('platformSessions must have foreign key on user_id referencing platformUsers.');
+        }
+      }
+
+      if (name === 'platformMfaCredentials') {
+        const hasUserFk = config.foreignKeys?.some((fk: any) => {
+          try {
+            const ref = typeof fk.reference === 'function' ? fk.reference() : fk;
+            return ref?.columns?.some((c: any) => c.name === 'user_id');
+          } catch {
+            return false;
+          }
+        });
+        if (!hasUserFk) {
+          errors.push('platformMfaCredentials must have foreign key on user_id referencing platformUsers.');
         }
       }
     } catch (err: any) {

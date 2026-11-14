@@ -3,7 +3,7 @@ import { PlatformSecurityContext, AccessTokenPayload } from './context.ts';
 import { PlatformRole, isPlatformRole, isTenantRole, PLATFORM_ROLES, TENANT_ROLES } from '../policies/rbac.ts';
 import { PlatformPermission } from '../policies/permissions.ts';
 import { getDb, isDatabaseConfigured } from '../db/index.ts';
-import { platformUsers, platformSessions, platformRolePermissions, platformPermissions } from '../db/schema.ts';
+import { platformUsers, platformSessions, platformRolePermissions, platformPermissions, platformMfaCredentials } from '../db/schema.ts';
 import { eq, and, gt, or, like } from 'drizzle-orm';
 
 export interface AuthoritativeUserRecord {
@@ -29,7 +29,24 @@ export interface AuthoritativeSessionRecord {
   lastRotatedAt?: Date | string | null;
   tokenFamilyHistory?: string | null;
   isRevoked: boolean;
+  mfaVerified?: boolean;
+  stepUpCompletedAt?: Date | string | null;
   expiresAt: Date | string;
+}
+
+export interface AuthoritativeMfaRecord {
+  id: string;
+  userId: string;
+  encryptedSecret: string;
+  secretIv: string;
+  secretTag: string;
+  recoveryCodeHashes: string[];
+  lastUsedStep?: number | null;
+  failedAttempts: number;
+  lockedUntil?: Date | string | null;
+  stepUpVerifiedAt?: Date | string | null;
+  enrolledAt: Date | string;
+  updatedAt: Date | string;
 }
 
 export interface SessionRotationResult {
@@ -58,6 +75,11 @@ export interface AuthoritativeDataStore {
   ): Promise<SessionRotationResult>;
   revokeSession?(sessionId: string): Promise<void>;
   revokeAllSessionsForUser?(userId: string): Promise<void>;
+  getMfaCredentials?(userId: string): Promise<AuthoritativeMfaRecord | null>;
+  saveMfaCredentials?(creds: AuthoritativeMfaRecord): Promise<void>;
+  updateMfaLockout?(userId: string, failedAttempts: number, lockedUntil: Date | null): Promise<void>;
+  recordMfaSuccess?(userId: string, step: number | null, remainingRecoveryHashes?: string[]): Promise<void>;
+  recordStepUpVerification?(sessionId: string, userId: string): Promise<void>;
 }
 
 /**
@@ -107,6 +129,8 @@ export class PostgresAuthoritativeDataStore implements AuthoritativeDataStore {
       lastRotatedAt: s.lastRotatedAt,
       tokenFamilyHistory: s.tokenFamilyHistory,
       isRevoked: s.isRevoked,
+      mfaVerified: (s as any).mfaVerified ?? false,
+      stepUpCompletedAt: (s as any).stepUpCompletedAt ?? null,
       expiresAt: s.expiresAt,
     };
   }
@@ -288,6 +312,146 @@ export class PostgresAuthoritativeDataStore implements AuthoritativeDataStore {
 
     return rows.map((r) => r.code as PlatformPermission);
   }
+
+  async getMfaCredentials(userId: string): Promise<AuthoritativeMfaRecord | null> {
+    const db = getDb();
+    if (!db) {
+      throw new Error('PostgreSQL database pool is unavailable.');
+    }
+    const rows = await db
+      .select()
+      .from(platformMfaCredentials)
+      .where(eq(platformMfaCredentials.userId, userId))
+      .limit(1);
+    if (rows.length === 0) return null;
+    const r = rows[0];
+    let recoveryHashes: string[] = [];
+    try {
+      recoveryHashes = JSON.parse(r.recoveryCodeHashes);
+    } catch {
+      recoveryHashes = [];
+    }
+    return {
+      id: r.id,
+      userId: r.userId,
+      encryptedSecret: r.encryptedSecret,
+      secretIv: r.secretIv,
+      secretTag: r.secretTag,
+      recoveryCodeHashes: recoveryHashes,
+      lastUsedStep: r.lastUsedStep,
+      failedAttempts: r.failedAttempts,
+      lockedUntil: r.lockedUntil,
+      stepUpVerifiedAt: r.stepUpVerifiedAt,
+      enrolledAt: r.enrolledAt,
+      updatedAt: r.updatedAt,
+    };
+  }
+
+  async saveMfaCredentials(creds: AuthoritativeMfaRecord): Promise<void> {
+    const db = getDb();
+    if (!db) {
+      throw new Error('PostgreSQL database pool is unavailable.');
+    }
+    const serializedHashes = JSON.stringify(creds.recoveryCodeHashes || []);
+    const now = new Date();
+    const existing = await db
+      .select({ id: platformMfaCredentials.id })
+      .from(platformMfaCredentials)
+      .where(eq(platformMfaCredentials.userId, creds.userId))
+      .limit(1);
+
+    if (existing.length > 0) {
+      await db
+        .update(platformMfaCredentials)
+        .set({
+          encryptedSecret: creds.encryptedSecret,
+          secretIv: creds.secretIv,
+          secretTag: creds.secretTag,
+          recoveryCodeHashes: serializedHashes,
+          lastUsedStep: creds.lastUsedStep,
+          failedAttempts: creds.failedAttempts || 0,
+          lockedUntil: creds.lockedUntil ? new Date(creds.lockedUntil) : null,
+          stepUpVerifiedAt: creds.stepUpVerifiedAt ? new Date(creds.stepUpVerifiedAt) : null,
+          updatedAt: now,
+        })
+        .where(eq(platformMfaCredentials.userId, creds.userId));
+    } else {
+      await db.insert(platformMfaCredentials).values({
+        id: creds.id,
+        userId: creds.userId,
+        encryptedSecret: creds.encryptedSecret,
+        secretIv: creds.secretIv,
+        secretTag: creds.secretTag,
+        recoveryCodeHashes: serializedHashes,
+        lastUsedStep: creds.lastUsedStep,
+        failedAttempts: creds.failedAttempts || 0,
+        lockedUntil: creds.lockedUntil ? new Date(creds.lockedUntil) : null,
+        stepUpVerifiedAt: creds.stepUpVerifiedAt ? new Date(creds.stepUpVerifiedAt) : null,
+        enrolledAt: creds.enrolledAt ? new Date(creds.enrolledAt) : now,
+        updatedAt: now,
+      });
+    }
+
+    await db
+      .update(platformUsers)
+      .set({ mfaEnabled: true, updatedAt: now })
+      .where(eq(platformUsers.id, creds.userId));
+  }
+
+  async updateMfaLockout(userId: string, failedAttempts: number, lockedUntil: Date | null): Promise<void> {
+    const db = getDb();
+    if (!db) {
+      throw new Error('PostgreSQL database pool is unavailable.');
+    }
+    await db
+      .update(platformMfaCredentials)
+      .set({
+        failedAttempts,
+        lockedUntil,
+        updatedAt: new Date(),
+      })
+      .where(eq(platformMfaCredentials.userId, userId));
+  }
+
+  async recordMfaSuccess(userId: string, step: number | null, remainingRecoveryHashes?: string[]): Promise<void> {
+    const db = getDb();
+    if (!db) {
+      throw new Error('PostgreSQL database pool is unavailable.');
+    }
+    const updates: any = {
+      failedAttempts: 0,
+      lockedUntil: null,
+      stepUpVerifiedAt: new Date(),
+      updatedAt: new Date(),
+    };
+    if (step !== null && step !== undefined) {
+      updates.lastUsedStep = step;
+    }
+    if (remainingRecoveryHashes) {
+      updates.recoveryCodeHashes = JSON.stringify(remainingRecoveryHashes);
+    }
+    await db
+      .update(platformMfaCredentials)
+      .set(updates)
+      .where(eq(platformMfaCredentials.userId, userId));
+  }
+
+  async recordStepUpVerification(sessionId: string, userId: string): Promise<void> {
+    const db = getDb();
+    if (!db) {
+      throw new Error('PostgreSQL database pool is unavailable.');
+    }
+    const now = new Date();
+    await db
+      .update(platformSessions)
+      .set({ stepUpCompletedAt: now })
+      .where(eq(platformSessions.id, sessionId));
+
+    await db
+      .update(platformMfaCredentials)
+      .set({ stepUpVerifiedAt: now, updatedAt: now })
+      .where(eq(platformMfaCredentials.userId, userId));
+  }
 }
 
 /**
@@ -300,6 +464,7 @@ export class StandaloneDevDataStore implements AuthoritativeDataStore {
   private users: Map<string, AuthoritativeUserRecord> = new Map();
   private sessions: Map<string, AuthoritativeSessionRecord> = new Map();
   private rolePermissions: Map<string, Set<PlatformPermission>> = new Map();
+  private mfaCredentials: Map<string, AuthoritativeMfaRecord> = new Map();
 
   constructor() {
     this.seedDevStaff();
@@ -427,12 +592,16 @@ export class StandaloneDevDataStore implements AuthoritativeDataStore {
     refreshTokenHash?: string,
     previousRefreshTokenHash?: string | null,
     lastRotatedAt?: Date | null,
-    tokenFamilyHistory?: string | null
+    tokenFamilyHistory?: string | null,
+    mfaVerified: boolean = false,
+    stepUpCompletedAt?: Date | null
   ): void {
     this.sessions.set(sessionId, {
       id: sessionId,
       userId,
       isRevoked: false,
+      mfaVerified,
+      stepUpCompletedAt: stepUpCompletedAt || null,
       expiresAt,
       refreshTokenHash,
       previousRefreshTokenHash: previousRefreshTokenHash || null,
@@ -559,6 +728,63 @@ export class StandaloneDevDataStore implements AuthoritativeDataStore {
     }
   }
 
+  async getMfaCredentials(userId: string): Promise<AuthoritativeMfaRecord | null> {
+    const creds = this.mfaCredentials.get(userId);
+    if (!creds) return null;
+    return { ...creds, recoveryCodeHashes: [...creds.recoveryCodeHashes] };
+  }
+
+  async saveMfaCredentials(creds: AuthoritativeMfaRecord): Promise<void> {
+    this.mfaCredentials.set(creds.userId, {
+      ...creds,
+      recoveryCodeHashes: [...creds.recoveryCodeHashes],
+      updatedAt: new Date().toISOString(),
+    });
+    const user = this.users.get(creds.userId);
+    if (user) {
+      user.mfaEnabled = true;
+    }
+  }
+
+  async updateMfaLockout(userId: string, failedAttempts: number, lockedUntil: Date | null): Promise<void> {
+    const creds = this.mfaCredentials.get(userId);
+    if (creds) {
+      creds.failedAttempts = failedAttempts;
+      creds.lockedUntil = lockedUntil ? lockedUntil.toISOString() : null;
+      creds.updatedAt = new Date().toISOString();
+    }
+  }
+
+  async recordMfaSuccess(userId: string, step: number | null, remainingRecoveryHashes?: string[]): Promise<void> {
+    const creds = this.mfaCredentials.get(userId);
+    if (creds) {
+      creds.failedAttempts = 0;
+      creds.lockedUntil = null;
+      creds.stepUpVerifiedAt = new Date().toISOString();
+      if (step !== null && step !== undefined) {
+        creds.lastUsedStep = step;
+      }
+      if (remainingRecoveryHashes) {
+        creds.recoveryCodeHashes = [...remainingRecoveryHashes];
+      }
+      creds.updatedAt = new Date().toISOString();
+    }
+  }
+
+  async recordStepUpVerification(sessionId: string, userId: string): Promise<void> {
+    const now = new Date();
+    const s = this.sessions.get(sessionId);
+    if (s) {
+      s.stepUpCompletedAt = now;
+      s.mfaVerified = true;
+    }
+    const creds = this.mfaCredentials.get(userId);
+    if (creds) {
+      creds.stepUpVerifiedAt = now.toISOString();
+      creds.updatedAt = now.toISOString();
+    }
+  }
+
   clearSessions(): void {
     this.sessions.clear();
   }
@@ -603,6 +829,16 @@ export async function validatePlatformAuthorization(
       status: 401,
       error: 'INVALID_TOKEN',
       message: 'Platform access token is invalid or expired. Please re-authenticate.',
+    };
+  }
+
+  // 1b. Reject restricted MFA challenge tokens immediately
+  if ((payload as any).purpose === 'mfa_challenge') {
+    return {
+      success: false,
+      status: 401,
+      error: 'RESTRICTED_MFA_CHALLENGE_TOKEN',
+      message: 'MFA challenge tokens cannot be used to access platform APIs. Complete second-factor authentication to obtain an authorized session.',
     };
   }
 
@@ -776,6 +1012,8 @@ export async function validatePlatformAuthorization(
     permissions: authoritativePermissions, // EXCLUSIVELY FROM AUTHORITATIVE DB MAPPINGS
     isImpersonating: false,
     sessionId: session.id,
+    mfaVerified: !!session.mfaVerified,
+    stepUpCompletedAt: session.stepUpCompletedAt || null,
     ipAddress: requestMeta.clientIp || '127.0.0.1',
     userAgent: requestMeta.userAgent || '',
   };

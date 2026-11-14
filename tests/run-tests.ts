@@ -5,6 +5,9 @@ if (!process.env.JWT_SECRET) {
 if (!process.env.REFRESH_TOKEN_SECRET) {
   process.env.REFRESH_TOKEN_SECRET = 'dialpulse-central-crm-test-refresh-secret-32chars-min';
 }
+if (!process.env.MFA_ENCRYPTION_KEY) {
+  process.env.MFA_ENCRYPTION_KEY = '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
+}
 if (!process.env.NODE_ENV) {
   process.env.NODE_ENV = 'test';
 }
@@ -15,6 +18,7 @@ import { runCredentialsTests } from './credentials.test.ts';
 import { runSessionLifecycleTests } from './session-lifecycle.test.ts';
 import { runRbacTests } from './rbac.test.ts';
 import { runSecurityTests } from './security.test.ts';
+import { runMfaTests } from './mfa.test.ts';
 import { runSdlcTests } from './sdlc.test.ts';
 import { runTenantFilterTests } from './tenant-filter.test.ts';
 import { runDatabaseTlsTests } from './db-tls.test.ts';
@@ -32,6 +36,7 @@ async function main() {
     await runSessionLifecycleTests();
     await runRbacTests();
     await runSecurityTests();
+    await runMfaTests();
     await runSdlcTests();
     await runTenantFilterTests();
     await runDatabaseTlsTests();

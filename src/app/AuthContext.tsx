@@ -1,14 +1,17 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { PlatformUser, PlatformRole } from './types.ts';
+import { PlatformUser, PlatformRole, LoginResponse } from './types.ts';
 import { api } from './api.ts';
 
 interface AuthContextType {
   user: PlatformUser | null;
   loading: boolean;
   error: string | null;
-  login: (email: string, password: string) => Promise<void>;
+  login: (email: string, password: string) => Promise<LoginResponse>;
+  verifyMfaChallenge: (challengeToken: string, code: string) => Promise<void>;
+  verifyMfaRecovery: (challengeToken: string, recoveryCode: string) => Promise<number>;
   logout: () => Promise<void>;
   hasPermission: (permissionCode: string) => boolean;
+  refreshUser: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -43,17 +46,58 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     loadCurrentSession();
   }, []);
 
-  const login = async (email: string, password: string) => {
+  const login = async (email: string, password: string): Promise<LoginResponse> => {
     setError(null);
     setLoading(true);
     try {
       const res = await api.login(email, password);
-      setUser(res.user);
+      if ('user' in res) {
+        setUser(res.user);
+      }
+      return res;
     } catch (err: any) {
       setError(err.message || 'Login failed');
       throw err;
     } finally {
       setLoading(false);
+    }
+  };
+
+  const verifyMfaChallenge = async (challengeToken: string, code: string) => {
+    setError(null);
+    setLoading(true);
+    try {
+      const res = await api.submitMfaChallenge(challengeToken, code);
+      setUser(res.user);
+    } catch (err: any) {
+      setError(err.message || 'MFA verification failed');
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const verifyMfaRecovery = async (challengeToken: string, recoveryCode: string): Promise<number> => {
+    setError(null);
+    setLoading(true);
+    try {
+      const res = await api.submitMfaRecovery(challengeToken, recoveryCode);
+      setUser(res.user);
+      return res.remainingRecoveryCodes;
+    } catch (err: any) {
+      setError(err.message || 'Recovery code verification failed');
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const refreshUser = async () => {
+    try {
+      const u = await api.getCurrentUser();
+      setUser(u);
+    } catch {
+      // ignore
     }
   };
 
@@ -78,8 +122,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         loading,
         error,
         login,
+        verifyMfaChallenge,
+        verifyMfaRecovery,
         logout,
         hasPermission,
+        refreshUser,
       }}
     >
       {children}

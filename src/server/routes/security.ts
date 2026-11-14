@@ -2,6 +2,7 @@ import { Router, Response } from 'express';
 import { ExtendedRequest } from '../middleware/request-context.ts';
 import { requirePlatformAuth } from '../middleware/auth.ts';
 import { requirePlatformPermission } from '../middleware/authorize.ts';
+import { requireStepUpAuth } from '../middleware/step-up.ts';
 import { PLATFORM_PERMISSIONS } from '../policies/permissions.ts';
 import { getDb, isDatabaseConfigured } from '../db/index.ts';
 import { securityEvents } from '../db/schema.ts';
@@ -54,6 +55,7 @@ router.post(
   '/events/:id/resolve',
   requirePlatformAuth,
   requirePlatformPermission(PLATFORM_PERMISSIONS.SECURITY_MANAGE),
+  requireStepUpAuth,
   async (req: ExtendedRequest, res: Response) => {
     const eventId = req.params.id;
 

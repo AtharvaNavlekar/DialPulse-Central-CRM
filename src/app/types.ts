@@ -17,7 +17,29 @@ export interface PlatformUser {
     userId: string;
     userEmail: string;
   } | null;
+  mfaVerified?: boolean;
+  stepUpCompletedAt?: string | null;
   isDatabaseConfigured?: boolean;
+}
+
+export interface MfaChallengeResponse {
+  mfaRequired: true;
+  challengeToken: string;
+  email: string;
+  message?: string;
+}
+
+export type LoginResponse =
+  | { success: true; user: PlatformUser }
+  | MfaChallengeResponse;
+
+export interface MfaEnrollResponse {
+  success: boolean;
+  secret: string;
+  provisioningUri: string;
+  recoveryCodes: string[];
+  recoveryCodeHashes: string[];
+  message: string;
 }
 
 export interface Tenant {

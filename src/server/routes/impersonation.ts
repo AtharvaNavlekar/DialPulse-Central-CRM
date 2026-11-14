@@ -4,6 +4,7 @@ import { requirePlatformAuth } from '../middleware/auth.ts';
 import { PLATFORM_PERMISSIONS } from '../policies/permissions.ts';
 import { AuditService } from '../audit/service.ts';
 import { requirePlatformPermission as requirePerm } from '../middleware/authorize.ts';
+import { requireStepUpAuth } from '../middleware/step-up.ts';
 
 const router = Router();
 
@@ -36,6 +37,7 @@ router.post(
   '/request',
   requirePlatformAuth,
   requirePerm(PLATFORM_PERMISSIONS.IMPERSONATION_START),
+  requireStepUpAuth,
   async (req: ExtendedRequest, res: Response) => {
     const { targetTenantId, targetUserId, reason, ticketReference } = req.body || {};
 

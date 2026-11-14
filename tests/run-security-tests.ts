@@ -18,6 +18,7 @@ import express from 'express';
 import { runSecurityTests } from './security.test.ts';
 import { runCredentialsTests } from './credentials.test.ts';
 import { runSessionLifecycleTests } from './session-lifecycle.test.ts';
+import { runMfaTests } from './mfa.test.ts';
 import { signAccessToken } from '../src/server/auth/token.ts';
 import { validatePlatformAuthorization, AuthoritativeDataStore, AuthoritativeUserRecord, AuthoritativeSessionRecord } from '../src/server/auth/authoritative-validator.ts';
 import { PLATFORM_PERMISSIONS, PlatformPermission } from '../src/server/policies/permissions.ts';
@@ -534,9 +535,15 @@ async function main() {
     console.log('  ✓ Gate 13: Audit logging verified — persistence status accurately reported, not falsely claimed');
   }
 
+  // Gate 14: Platform MFA & Step-up Authentication Lifecycle
+  {
+    await runMfaTests();
+    console.log('  ✓ Gate 14: Platform MFA & Step-up Authentication Lifecycle verified');
+  }
+
   const duration = Date.now() - startTime;
   console.log(`\n====================================================`);
-  console.log(`✓ ALL 13 AUTOMATED SECURITY GATES VERIFIED (${duration}ms)`);
+  console.log(`✓ ALL 14 AUTOMATED SECURITY GATES VERIFIED (${duration}ms)`);
   console.log(`====================================================\n`);
   process.exit(0);
 }

@@ -27,6 +27,7 @@ import { PageHeader } from '../../components/ui/PageHeader.tsx';
 import { Button } from '../../components/ui/Button.tsx';
 import { SearchInput, Input } from '../../components/ui/Input.tsx';
 import { Card } from '../../components/ui/Card.tsx';
+import { StepUpModal } from '../../components/auth/StepUpModal.tsx';
 
 export const TenantListView: React.FC = () => {
   const [tenants, setTenants] = useState<Tenant[]>([]);
@@ -48,6 +49,11 @@ export const TenantListView: React.FC = () => {
 
   const [reactivateModalOpen, setReactivateModalOpen] = useState(false);
   const [reactivateLoading, setReactivateLoading] = useState(false);
+
+  // Step-Up Authentication Modal
+  const [stepUpOpen, setStepUpOpen] = useState(false);
+  const [stepUpTitle, setStepUpTitle] = useState('');
+  const [pendingAction, setPendingAction] = useState<(() => Promise<void>) | null>(null);
 
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [createLoading, setCreateLoading] = useState(false);
@@ -109,6 +115,16 @@ export const TenantListView: React.FC = () => {
       setSuspendModalOpen(false);
       await loadTenants();
     } catch (err: any) {
+      if (err.code === 'STEP_UP_REQUIRED' || err.status === 403) {
+        setStepUpTitle(`Suspending Tenant: ${selectedTenant.name}`);
+        setPendingAction(() => async () => {
+          await api.suspendTenant(selectedTenant.id, suspendReason);
+          setSuspendModalOpen(false);
+          await loadTenants();
+        });
+        setStepUpOpen(true);
+        return;
+      }
       alert(`Failed to suspend tenant: ${err.message}`);
     } finally {
       setSuspendLoading(false);
@@ -128,6 +144,16 @@ export const TenantListView: React.FC = () => {
       setReactivateModalOpen(false);
       await loadTenants();
     } catch (err: any) {
+      if (err.code === 'STEP_UP_REQUIRED' || err.status === 403) {
+        setStepUpTitle(`Reactivating Tenant: ${selectedTenant.name}`);
+        setPendingAction(() => async () => {
+          await api.reactivateTenant(selectedTenant.id);
+          setReactivateModalOpen(false);
+          await loadTenants();
+        });
+        setStepUpOpen(true);
+        return;
+      }
       alert(`Failed to reactivate tenant: ${err.message}`);
     } finally {
       setReactivateLoading(false);
@@ -648,6 +674,23 @@ export const TenantListView: React.FC = () => {
           </div>
         </form>
       </Modal>
+
+      {/* Step-Up Authentication Modal */}
+      <StepUpModal
+        isOpen={stepUpOpen}
+        onClose={() => {
+          setStepUpOpen(false);
+          setPendingAction(null);
+        }}
+        onSuccess={async () => {
+          if (pendingAction) {
+            const action = pendingAction;
+            setPendingAction(null);
+            await action();
+          }
+        }}
+        actionTitle={stepUpTitle}
+      />
     </div>
   );
 };

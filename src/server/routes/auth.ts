@@ -3,7 +3,25 @@ import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
 import { ExtendedRequest } from '../middleware/request-context.ts';
-import { signAccessToken, generateRefreshToken, hashToken, verifyAccessToken } from '../auth/token.ts';
+import {
+  signAccessToken,
+  generateRefreshToken,
+  hashToken,
+  verifyAccessToken,
+  signMfaChallengeToken,
+  verifyMfaChallengeToken,
+} from '../auth/token.ts';
+import {
+  decryptMfaSecret,
+  encryptMfaSecret,
+  generateTotpSecret,
+  generateTotpProvisioningUri,
+  verifyTotpCode,
+  generateRecoveryCodes,
+  verifyAndConsumeRecoveryCode,
+  isMfaLocked,
+  recordFailedAttempt,
+} from '../auth/crypto-mfa.ts';
 import { requirePlatformAuth } from '../middleware/auth.ts';
 import { getDb, isDatabaseConfigured } from '../db/index.ts';
 import { platformUsers, platformSessions } from '../db/schema.ts';
@@ -15,6 +33,7 @@ import {
   PostgresAuthoritativeDataStore,
   standaloneDevStore,
   ReplayMatch,
+  validatePlatformAuthorization,
 } from '../auth/authoritative-validator.ts';
 import {
   COOKIE_NAMES,
@@ -270,6 +289,46 @@ router.post('/login', async (req: ExtendedRequest, res: Response) => {
     return res.status(403).json({
       error: 'ACCOUNT_DISABLED',
       message: 'Platform staff account is deactivated or not privileged in database.',
+    });
+  }
+
+  // Resolve authoritative data store for MFA verification check
+  let store: AuthoritativeDataStore;
+  const customStore = req.app?.get('authoritativeStore');
+  if (customStore) {
+    store = customStore;
+  } else if (isDatabaseConfigured()) {
+    store = new PostgresAuthoritativeDataStore();
+  } else {
+    store = standaloneDevStore;
+  }
+
+  const mfaCreds = store.getMfaCredentials ? await store.getMfaCredentials(user.id) : null;
+  const requiresMfa = !!user.mfaEnabled || !!mfaCreds;
+
+  if (requiresMfa) {
+    // Generate restricted short-lived challenge token (5 minutes)
+    // No access or refresh cookies are issued here!
+    const challengeToken = signMfaChallengeToken({
+      sub: user.id,
+      email: user.email,
+    });
+
+    await AuditService.record({
+      action: 'mfa_challenge_issued',
+      targetType: 'auth',
+      targetId: user.id,
+      result: 'success',
+      ipAddress: req.clientIp,
+      userAgent: req.headers['user-agent'],
+      details: { email: user.email },
+    }).catch(() => {});
+
+    return res.json({
+      mfaRequired: true,
+      challengeToken,
+      email: user.email,
+      message: 'Two-factor authentication required. Please submit your 6-digit authenticator code or recovery code.',
     });
   }
 
@@ -799,8 +858,652 @@ router.get('/me', requirePlatformAuth, async (req: ExtendedRequest, res: Respons
       permissions: context.permissions,
       isImpersonating: context.isImpersonating,
       actingAs: context.actingAs || null,
+      mfaVerified: context.mfaVerified,
+      stepUpCompletedAt: context.stepUpCompletedAt,
       isDatabaseConfigured: isDatabaseConfigured(),
     },
+  });
+});
+
+/**
+ * POST /api/auth/mfa/challenge
+ * Validates TOTP code against AES-256-GCM decrypted secret for an active challenge session.
+ * Enforces replay prevention and 15-minute lockout.
+ */
+router.post('/mfa/challenge', async (req: ExtendedRequest, res: Response) => {
+  const { challengeToken, code } = req.body || {};
+  if (!challengeToken || !code) {
+    return res.status(400).json({
+      error: 'MISSING_PARAMETERS',
+      message: 'Both challengeToken and 6-digit TOTP code are required.',
+    });
+  }
+
+  let challengePayload: { sub: string; email: string };
+  try {
+    challengePayload = verifyMfaChallengeToken(challengeToken);
+  } catch {
+    return res.status(401).json({
+      error: 'INVALID_CHALLENGE_TOKEN',
+      message: 'The MFA challenge token is invalid, expired, or tampered with.',
+    });
+  }
+
+  let store: AuthoritativeDataStore;
+  const customStore = req.app?.get('authoritativeStore');
+  if (customStore) {
+    store = customStore;
+  } else if (isDatabaseConfigured()) {
+    store = new PostgresAuthoritativeDataStore();
+  } else {
+    store = standaloneDevStore;
+  }
+
+  const user = await store.getUserById(challengePayload.sub);
+  if (!user || !user.isActive || !user.isPlatformStaff) {
+    return res.status(403).json({
+      error: 'ACCOUNT_DISABLED',
+      message: 'Platform staff account is deactivated or unauthorized.',
+    });
+  }
+
+  const mfaCreds = store.getMfaCredentials ? await store.getMfaCredentials(user.id) : null;
+  if (!mfaCreds) {
+    return res.status(400).json({
+      error: 'MFA_NOT_ENROLLED',
+      message: 'MFA is not enrolled for this account.',
+    });
+  }
+
+  // Check lockout
+  if (isMfaLocked(mfaCreds.lockedUntil)) {
+    const lockedUntilTime = new Date(mfaCreds.lockedUntil!).toLocaleTimeString();
+    await AuditService.record({
+      action: 'mfa_locked_attempt_rejected',
+      targetType: 'auth',
+      targetId: user.id,
+      result: 'denied',
+      ipAddress: req.clientIp,
+      userAgent: req.headers['user-agent'],
+      details: { email: user.email, lockedUntil: mfaCreds.lockedUntil },
+    }).catch(() => {});
+
+    return res.status(429).json({
+      error: 'ACCOUNT_LOCKED',
+      message: `Account is temporarily locked due to repeated failed MFA attempts. Please try again after ${lockedUntilTime}.`,
+      lockedUntil: mfaCreds.lockedUntil,
+    });
+  }
+
+  // Decrypt secret
+  let secret: string;
+  try {
+    secret = decryptMfaSecret({
+      encryptedSecret: mfaCreds.encryptedSecret,
+      secretIv: mfaCreds.secretIv,
+      secretTag: mfaCreds.secretTag,
+    });
+  } catch (err: any) {
+    console.error('[MFA_CRYPTO_ERROR] Failed decrypting MFA secret for user:', user.id, err.message);
+    return res.status(500).json({
+      error: 'MFA_DECRYPTION_FAILED',
+      message: 'Cryptographic failure verifying MFA credentials.',
+    });
+  }
+
+  // Verify TOTP code
+  const verification = verifyTotpCode(String(code).trim(), secret, {
+    lastUsedStep: mfaCreds.lastUsedStep,
+  });
+
+  if (!verification.valid) {
+    const failedInfo = recordFailedAttempt(mfaCreds.failedAttempts);
+    if (store.updateMfaLockout) {
+      await store.updateMfaLockout(user.id, failedInfo.newFailureCount, failedInfo.lockedUntil);
+    }
+
+    await AuditService.record({
+      action: verification.isReplay ? 'mfa_totp_replay_detected' : 'mfa_challenge_failed_invalid_code',
+      targetType: 'auth',
+      targetId: user.id,
+      result: 'denied',
+      ipAddress: req.clientIp,
+      userAgent: req.headers['user-agent'],
+      details: {
+        email: user.email,
+        failedAttempts: failedInfo.newFailureCount,
+        isReplay: !!verification.isReplay,
+        locked: failedInfo.isNowLocked,
+      },
+    }).catch(() => {});
+
+    if (failedInfo.isNowLocked) {
+      return res.status(429).json({
+        error: 'ACCOUNT_LOCKED',
+        message: 'Too many failed verification attempts. Account is locked for 15 minutes.',
+        lockedUntil: failedInfo.lockedUntil,
+      });
+    }
+
+    return res.status(401).json({
+      error: verification.isReplay ? 'INVALID_OR_REPLAYED_CODE' : 'INVALID_TOTP_CODE',
+      message: verification.isReplay
+        ? 'This verification code has already been consumed or has expired. Please enter the current code from your authenticator app.'
+        : 'Invalid 6-digit authenticator code. Please try again.',
+      remainingAttempts: Math.max(0, 5 - failedInfo.newFailureCount),
+    });
+  }
+
+  // Code verified! Record MFA success and step
+  if (store.recordMfaSuccess) {
+    await store.recordMfaSuccess(user.id, verification.step ?? null);
+  }
+
+  // Generate authoritative platform session with mfaVerified: true
+  const sessionId = `ses_${crypto.randomUUID()}`;
+  const { token: refreshToken, hash: refreshHash, expiresAt: refreshExpiresAt } = generateRefreshToken();
+  const now = new Date();
+
+  if (isDatabaseConfigured()) {
+    const db = getDb();
+    if (db) {
+      await db.insert(platformSessions).values({
+        id: sessionId,
+        userId: user.id,
+        refreshTokenHash: refreshHash,
+        userAgent: req.headers['user-agent'] || null,
+        ipAddress: req.clientIp || null,
+        expiresAt: refreshExpiresAt,
+        isRevoked: false,
+        mfaVerified: true,
+        stepUpCompletedAt: now,
+      });
+      await db.update(platformUsers).set({ lastLoginAt: now }).where(eq(platformUsers.id, user.id));
+    }
+  } else {
+    standaloneDevStore.createSession(
+      sessionId,
+      user.id,
+      refreshExpiresAt,
+      refreshHash,
+      null,
+      null,
+      '[]',
+      true,
+      now
+    );
+  }
+
+  const accessToken = signAccessToken({
+    sub: user.id,
+    email: user.email,
+    role: user.platformRole,
+    isPlatformStaff: true,
+    sessionId,
+    mfaVerified: true,
+    stepUpCompletedAt: now.toISOString(),
+  });
+
+  res.cookie(COOKIE_NAMES.ACCESS_TOKEN, accessToken, getAccessTokenCookieOptions());
+  res.cookie(COOKIE_NAMES.REFRESH_TOKEN, refreshToken, getRefreshTokenCookieOptions());
+
+  await AuditService.record({
+    actor: {
+      actorId: user.id,
+      actorEmail: user.email,
+      actorPlatformRole: user.platformRole as any,
+    },
+    action: 'mfa_challenge_verified_success',
+    targetType: 'session',
+    targetId: sessionId,
+    result: 'success',
+    ipAddress: req.clientIp,
+    userAgent: req.headers['user-agent'],
+    details: { method: 'totp', step: verification.step },
+  }).catch(() => {});
+
+  return res.json({
+    success: true,
+    user: {
+      id: user.id,
+      email: user.email,
+      fullName: user.fullName,
+      platformRole: user.platformRole,
+      isPlatformStaff: true,
+      mfaVerified: true,
+      stepUpCompletedAt: now.toISOString(),
+    },
+    sessionId,
+  });
+});
+
+/**
+ * POST /api/auth/mfa/recovery
+ * Consumes a single-use recovery code to authenticate when the TOTP authenticator is unavailable.
+ */
+router.post('/mfa/recovery', async (req: ExtendedRequest, res: Response) => {
+  const { challengeToken, recoveryCode } = req.body || {};
+  if (!challengeToken || !recoveryCode) {
+    return res.status(400).json({
+      error: 'MISSING_PARAMETERS',
+      message: 'Both challengeToken and recoveryCode are required.',
+    });
+  }
+
+  let challengePayload: { sub: string; email: string };
+  try {
+    challengePayload = verifyMfaChallengeToken(challengeToken);
+  } catch {
+    return res.status(401).json({
+      error: 'INVALID_CHALLENGE_TOKEN',
+      message: 'The MFA challenge token is invalid, expired, or tampered with.',
+    });
+  }
+
+  let store: AuthoritativeDataStore;
+  const customStore = req.app?.get('authoritativeStore');
+  if (customStore) {
+    store = customStore;
+  } else if (isDatabaseConfigured()) {
+    store = new PostgresAuthoritativeDataStore();
+  } else {
+    store = standaloneDevStore;
+  }
+
+  const user = await store.getUserById(challengePayload.sub);
+  if (!user || !user.isActive || !user.isPlatformStaff) {
+    return res.status(403).json({
+      error: 'ACCOUNT_DISABLED',
+      message: 'Platform staff account is deactivated or unauthorized.',
+    });
+  }
+
+  const mfaCreds = store.getMfaCredentials ? await store.getMfaCredentials(user.id) : null;
+  if (!mfaCreds) {
+    return res.status(400).json({
+      error: 'MFA_NOT_ENROLLED',
+      message: 'MFA is not enrolled for this account.',
+    });
+  }
+
+  if (isMfaLocked(mfaCreds.lockedUntil)) {
+    return res.status(429).json({
+      error: 'ACCOUNT_LOCKED',
+      message: 'Account is temporarily locked due to repeated failed MFA attempts.',
+      lockedUntil: mfaCreds.lockedUntil,
+    });
+  }
+
+  const consumption = verifyAndConsumeRecoveryCode(String(recoveryCode).trim(), mfaCreds.recoveryCodeHashes);
+  if (!consumption.valid) {
+    const failedInfo = recordFailedAttempt(mfaCreds.failedAttempts);
+    if (store.updateMfaLockout) {
+      await store.updateMfaLockout(user.id, failedInfo.newFailureCount, failedInfo.lockedUntil);
+    }
+
+    await AuditService.record({
+      action: 'mfa_recovery_code_invalid',
+      targetType: 'auth',
+      targetId: user.id,
+      result: 'denied',
+      ipAddress: req.clientIp,
+      userAgent: req.headers['user-agent'],
+      details: { email: user.email, remainingAttempts: Math.max(0, 5 - failedInfo.newFailureCount) },
+    }).catch(() => {});
+
+    return res.status(401).json({
+      error: 'INVALID_RECOVERY_CODE',
+      message: 'The recovery code provided is invalid or has already been used.',
+      remainingAttempts: Math.max(0, 5 - failedInfo.newFailureCount),
+    });
+  }
+
+  // Code verified and consumed!
+  if (store.recordMfaSuccess) {
+    await store.recordMfaSuccess(user.id, null, consumption.remainingHashes);
+  }
+
+  const sessionId = `ses_${crypto.randomUUID()}`;
+  const { token: refreshToken, hash: refreshHash, expiresAt: refreshExpiresAt } = generateRefreshToken();
+  const now = new Date();
+
+  if (isDatabaseConfigured()) {
+    const db = getDb();
+    if (db) {
+      await db.insert(platformSessions).values({
+        id: sessionId,
+        userId: user.id,
+        refreshTokenHash: refreshHash,
+        userAgent: req.headers['user-agent'] || null,
+        ipAddress: req.clientIp || null,
+        expiresAt: refreshExpiresAt,
+        isRevoked: false,
+        mfaVerified: true,
+        stepUpCompletedAt: now,
+      });
+      await db.update(platformUsers).set({ lastLoginAt: now }).where(eq(platformUsers.id, user.id));
+    }
+  } else {
+    standaloneDevStore.createSession(
+      sessionId,
+      user.id,
+      refreshExpiresAt,
+      refreshHash,
+      null,
+      null,
+      '[]',
+      true,
+      now
+    );
+  }
+
+  const accessToken = signAccessToken({
+    sub: user.id,
+    email: user.email,
+    role: user.platformRole,
+    isPlatformStaff: true,
+    sessionId,
+    mfaVerified: true,
+    stepUpCompletedAt: now.toISOString(),
+  });
+
+  res.cookie(COOKIE_NAMES.ACCESS_TOKEN, accessToken, getAccessTokenCookieOptions());
+  res.cookie(COOKIE_NAMES.REFRESH_TOKEN, refreshToken, getRefreshTokenCookieOptions());
+
+  await AuditService.record({
+    actor: {
+      actorId: user.id,
+      actorEmail: user.email,
+      actorPlatformRole: user.platformRole as any,
+    },
+    action: 'mfa_recovery_code_used_success',
+    targetType: 'session',
+    targetId: sessionId,
+    result: 'success',
+    ipAddress: req.clientIp,
+    userAgent: req.headers['user-agent'],
+    details: { remainingCodesCount: consumption.remainingHashes.length },
+  }).catch(() => {});
+
+  return res.json({
+    success: true,
+    user: {
+      id: user.id,
+      email: user.email,
+      fullName: user.fullName,
+      platformRole: user.platformRole,
+      isPlatformStaff: true,
+      mfaVerified: true,
+      stepUpCompletedAt: now.toISOString(),
+    },
+    remainingRecoveryCodes: consumption.remainingHashes.length,
+    sessionId,
+  });
+});
+
+/**
+ * POST /api/auth/mfa/enroll
+ * Generates an authenticator secret, provisioning URI, and recovery codes.
+ */
+router.post('/mfa/enroll', async (req: ExtendedRequest, res: Response) => {
+  let userId: string;
+  let userEmail: string;
+
+  const authHeader = req.headers.authorization;
+  const cookieToken = req.cookies?.dp_central_access_token;
+  const { challengeToken } = req.body || {};
+
+  if (challengeToken) {
+    try {
+      const p = verifyMfaChallengeToken(challengeToken);
+      userId = p.sub;
+      userEmail = p.email;
+    } catch {
+      return res.status(401).json({ error: 'INVALID_CHALLENGE_TOKEN', message: 'Challenge token is invalid or expired.' });
+    }
+  } else if (authHeader || cookieToken) {
+    const rawToken = authHeader ? authHeader.replace(/^Bearer\s+/i, '').trim() : cookieToken;
+    const customStore = req.app?.get('authoritativeStore');
+    const authResult = await validatePlatformAuthorization(rawToken, { clientIp: req.clientIp }, customStore);
+    if (!authResult.success) {
+      return res.status(authResult.status).json({ error: authResult.error, message: authResult.message });
+    }
+    userId = authResult.context.actorId;
+    userEmail = authResult.context.actorEmail;
+  } else {
+    return res.status(401).json({ error: 'UNAUTHENTICATED', message: 'Authentication or challenge token required to initiate MFA enrollment.' });
+  }
+
+  const secret = generateTotpSecret(20);
+  const provisioningUri = generateTotpProvisioningUri(userEmail, secret, 'DialPulse Central');
+  const { plaintextCodes, hashedCodes } = generateRecoveryCodes(10);
+
+  return res.json({
+    success: true,
+    secret,
+    provisioningUri,
+    recoveryCodes: plaintextCodes,
+    recoveryCodeHashes: hashedCodes,
+    message: 'Scan the QR code or enter the secret in your authenticator app, then submit the 6-digit code to /api/auth/mfa/verify to complete enrollment.',
+  });
+});
+
+/**
+ * POST /api/auth/mfa/verify
+ * Two-step enrollment completion: validates the user's initial OTP code against the secret,
+ * encrypts the secret with AES-256-GCM, and persists MFA credentials to the authoritative database.
+ */
+router.post('/mfa/verify', async (req: ExtendedRequest, res: Response) => {
+  const { code, secret, recoveryCodeHashes, challengeToken } = req.body || {};
+
+  if (!code || !secret || !Array.isArray(recoveryCodeHashes) || recoveryCodeHashes.length === 0) {
+    return res.status(400).json({
+      error: 'MISSING_PARAMETERS',
+      message: 'code, secret, and recoveryCodeHashes are required to complete MFA verification.',
+    });
+  }
+
+  let userId: string;
+  let userEmail: string;
+
+  const authHeader = req.headers.authorization;
+  const cookieToken = req.cookies?.dp_central_access_token;
+
+  if (challengeToken) {
+    try {
+      const p = verifyMfaChallengeToken(challengeToken);
+      userId = p.sub;
+      userEmail = p.email;
+    } catch {
+      return res.status(401).json({ error: 'INVALID_CHALLENGE_TOKEN', message: 'Challenge token is invalid or expired.' });
+    }
+  } else if (authHeader || cookieToken) {
+    const rawToken = authHeader ? authHeader.replace(/^Bearer\s+/i, '').trim() : cookieToken;
+    const customStore = req.app?.get('authoritativeStore');
+    const authResult = await validatePlatformAuthorization(rawToken, { clientIp: req.clientIp }, customStore);
+    if (!authResult.success) {
+      return res.status(authResult.status).json({ error: authResult.error, message: authResult.message });
+    }
+    userId = authResult.context.actorId;
+    userEmail = authResult.context.actorEmail;
+  } else {
+    return res.status(401).json({ error: 'UNAUTHENTICATED', message: 'Authentication required to complete enrollment.' });
+  }
+
+  // Validate OTP code against the secret
+  const verification = verifyTotpCode(String(code).trim(), secret);
+  if (!verification.valid) {
+    return res.status(400).json({
+      error: 'INVALID_TOTP_CODE',
+      message: 'The code provided does not match the authenticator secret. Enrollment verification failed.',
+    });
+  }
+
+  // Encrypt secret with AES-256-GCM
+  let encryptedPayload;
+  try {
+    encryptedPayload = encryptMfaSecret(secret);
+  } catch (err: any) {
+    return res.status(500).json({
+      error: 'MFA_ENCRYPTION_FAILED',
+      message: 'Failed to encrypt MFA secret with AES-256-GCM: ' + err.message,
+    });
+  }
+
+  let store: AuthoritativeDataStore;
+  const customStore = req.app?.get('authoritativeStore');
+  if (customStore) {
+    store = customStore;
+  } else if (isDatabaseConfigured()) {
+    store = new PostgresAuthoritativeDataStore();
+  } else {
+    store = standaloneDevStore;
+  }
+
+  const now = new Date();
+  if (store.saveMfaCredentials) {
+    await store.saveMfaCredentials({
+      id: `mfa_${crypto.randomUUID().replace(/-/g, '').slice(0, 32)}`,
+      userId,
+      encryptedSecret: encryptedPayload.encryptedSecret,
+      secretIv: encryptedPayload.secretIv,
+      secretTag: encryptedPayload.secretTag,
+      recoveryCodeHashes,
+      lastUsedStep: verification.step,
+      failedAttempts: 0,
+      lockedUntil: null,
+      stepUpVerifiedAt: now,
+      enrolledAt: now.toISOString(),
+      updatedAt: now.toISOString(),
+    });
+  }
+
+  await AuditService.record({
+    action: 'mfa_enrollment_completed',
+    targetType: 'auth',
+    targetId: userId,
+    result: 'success',
+    ipAddress: req.clientIp,
+    userAgent: req.headers['user-agent'],
+    details: { email: userEmail, recoveryCodesCount: recoveryCodeHashes.length },
+  }).catch(() => {});
+
+  return res.json({
+    success: true,
+    message: 'Multi-factor authentication has been successfully enrolled and verified for this account.',
+  });
+});
+
+/**
+ * POST /api/auth/step-up
+ * Verifies recent TOTP or recovery code to grant 15-minute step-up authentication.
+ * Requires requirePlatformAuth.
+ */
+router.post('/step-up', requirePlatformAuth, async (req: ExtendedRequest, res: Response) => {
+  const context = req.securityContext!;
+  const { code, recoveryCode } = req.body || {};
+
+  if (!code && !recoveryCode) {
+    return res.status(400).json({
+      error: 'MISSING_STEP_UP_CODE',
+      message: 'A 6-digit TOTP code or recovery code is required for step-up authentication.',
+    });
+  }
+
+  let store: AuthoritativeDataStore;
+  const customStore = req.app?.get('authoritativeStore');
+  if (customStore) {
+    store = customStore;
+  } else if (isDatabaseConfigured()) {
+    store = new PostgresAuthoritativeDataStore();
+  } else {
+    store = standaloneDevStore;
+  }
+
+  const mfaCreds = store.getMfaCredentials ? await store.getMfaCredentials(context.actorId) : null;
+  if (!mfaCreds) {
+    return res.status(400).json({
+      error: 'MFA_NOT_ENROLLED',
+      message: 'MFA is not enrolled for this account. Enroll in MFA before attempting step-up actions.',
+    });
+  }
+
+  if (isMfaLocked(mfaCreds.lockedUntil)) {
+    return res.status(429).json({
+      error: 'ACCOUNT_LOCKED',
+      message: 'Account is temporarily locked due to repeated failed MFA attempts.',
+      lockedUntil: mfaCreds.lockedUntil,
+    });
+  }
+
+  const now = new Date();
+
+  if (code) {
+    let secret: string;
+    try {
+      secret = decryptMfaSecret({
+        encryptedSecret: mfaCreds.encryptedSecret,
+        secretIv: mfaCreds.secretIv,
+        secretTag: mfaCreds.secretTag,
+      });
+    } catch (err: any) {
+      return res.status(500).json({ error: 'MFA_DECRYPTION_FAILED', message: err.message });
+    }
+
+    const verification = verifyTotpCode(String(code).trim(), secret, {
+      lastUsedStep: mfaCreds.lastUsedStep,
+    });
+
+    if (!verification.valid) {
+      const failedInfo = recordFailedAttempt(mfaCreds.failedAttempts);
+      if (store.updateMfaLockout) {
+        await store.updateMfaLockout(context.actorId, failedInfo.newFailureCount, failedInfo.lockedUntil);
+      }
+      return res.status(401).json({
+        error: verification.isReplay ? 'INVALID_OR_REPLAYED_CODE' : 'INVALID_TOTP_CODE',
+        message: verification.isReplay ? 'This code has already been consumed.' : 'Invalid authenticator code.',
+      });
+    }
+
+    if (store.recordMfaSuccess) {
+      await store.recordMfaSuccess(context.actorId, verification.step ?? null);
+    }
+  } else if (recoveryCode) {
+    const consumption = verifyAndConsumeRecoveryCode(String(recoveryCode).trim(), mfaCreds.recoveryCodeHashes);
+    if (!consumption.valid) {
+      const failedInfo = recordFailedAttempt(mfaCreds.failedAttempts);
+      if (store.updateMfaLockout) {
+        await store.updateMfaLockout(context.actorId, failedInfo.newFailureCount, failedInfo.lockedUntil);
+      }
+      return res.status(401).json({
+        error: 'INVALID_RECOVERY_CODE',
+        message: 'The recovery code provided is invalid or has already been used.',
+      });
+    }
+
+    if (store.recordMfaSuccess) {
+      await store.recordMfaSuccess(context.actorId, null, consumption.remainingHashes);
+    }
+  }
+
+  if (store.recordStepUpVerification) {
+    await store.recordStepUpVerification(context.sessionId, context.actorId);
+  }
+
+  await AuditService.record({
+    actor: context,
+    action: 'step_up_authenticated_success',
+    targetType: 'session',
+    targetId: context.sessionId,
+    result: 'success',
+    ipAddress: req.clientIp,
+    userAgent: req.headers['user-agent'],
+  }).catch(() => {});
+
+  return res.json({
+    success: true,
+    stepUpCompletedAt: now.toISOString(),
+    message: 'Step-up authentication successful. Sensitive operations authorized for the next 15 minutes.',
   });
 });
 

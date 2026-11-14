@@ -1,4 +1,4 @@
-import { PlatformUser, OverviewData, Tenant, AuditRecord, SecurityEventItem, HealthCheckData } from './types.ts';
+import { PlatformUser, OverviewData, Tenant, AuditRecord, SecurityEventItem, HealthCheckData, LoginResponse, MfaEnrollResponse } from './types.ts';
 
 export class ApiClient {
   private refreshPromise: Promise<boolean> | null = null;
@@ -21,7 +21,8 @@ export class ApiClient {
       response.status === 401 &&
       endpoint !== '/api/auth/login' &&
       endpoint !== '/api/auth/refresh' &&
-      endpoint !== '/api/auth/logout'
+      endpoint !== '/api/auth/logout' &&
+      !endpoint.startsWith('/api/auth/mfa/')
     ) {
       const refreshed = await this.refreshToken();
       if (refreshed) {
@@ -40,6 +41,8 @@ export class ApiClient {
       const err = new Error(errorMsg) as any;
       err.status = response.status;
       err.code = data?.error;
+      err.remainingAttempts = data?.remainingAttempts;
+      err.lockedUntil = data?.lockedUntil;
       throw err;
     }
 
@@ -47,10 +50,50 @@ export class ApiClient {
   }
 
   // Auth Endpoints
-  async login(email: string, password: string): Promise<{ success: boolean; user: PlatformUser }> {
-    return this.request<{ success: boolean; user: PlatformUser }>('/api/auth/login', {
+  async login(email: string, password: string): Promise<LoginResponse> {
+    return this.request<LoginResponse>('/api/auth/login', {
       method: 'POST',
       body: JSON.stringify({ email, password }),
+    });
+  }
+
+  async submitMfaChallenge(challengeToken: string, code: string): Promise<{ success: boolean; user: PlatformUser }> {
+    return this.request<{ success: boolean; user: PlatformUser }>('/api/auth/mfa/challenge', {
+      method: 'POST',
+      body: JSON.stringify({ challengeToken, code }),
+    });
+  }
+
+  async submitMfaRecovery(challengeToken: string, recoveryCode: string): Promise<{ success: boolean; user: PlatformUser; remainingRecoveryCodes: number }> {
+    return this.request<{ success: boolean; user: PlatformUser; remainingRecoveryCodes: number }>('/api/auth/mfa/recovery', {
+      method: 'POST',
+      body: JSON.stringify({ challengeToken, recoveryCode }),
+    });
+  }
+
+  async enrollMfa(challengeToken?: string): Promise<MfaEnrollResponse> {
+    return this.request<MfaEnrollResponse>('/api/auth/mfa/enroll', {
+      method: 'POST',
+      body: JSON.stringify({ challengeToken }),
+    });
+  }
+
+  async verifyMfaEnrollment(
+    code: string,
+    secret: string,
+    recoveryCodeHashes: string[],
+    challengeToken?: string
+  ): Promise<{ success: boolean; message: string }> {
+    return this.request<{ success: boolean; message: string }>('/api/auth/mfa/verify', {
+      method: 'POST',
+      body: JSON.stringify({ code, secret, recoveryCodeHashes, challengeToken }),
+    });
+  }
+
+  async submitStepUp(code?: string, recoveryCode?: string): Promise<{ success: boolean; stepUpCompletedAt: string }> {
+    return this.request<{ success: boolean; stepUpCompletedAt: string }>('/api/auth/step-up', {
+      method: 'POST',
+      body: JSON.stringify({ code, recoveryCode }),
     });
   }
 

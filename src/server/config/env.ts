@@ -7,6 +7,7 @@ export interface ServerConfig {
   PORT: number;
   JWT_SECRET: string;
   REFRESH_TOKEN_SECRET: string;
+  MFA_ENCRYPTION_KEY?: string;
   DATABASE_URL?: string;
 }
 
@@ -77,6 +78,24 @@ export function validateEnv(customEnv?: Record<string, string | undefined>): Ser
       ? rawDatabaseUrl
       : undefined;
 
+  // 3b. MFA_ENCRYPTION_KEY validation if present
+  const mfaKey = env.MFA_ENCRYPTION_KEY?.trim();
+  if (mfaKey) {
+    let validMfaKey = false;
+    if (/^[0-9a-fA-F]{64}$/.test(mfaKey)) {
+      validMfaKey = true;
+    } else if (/^[A-Za-z0-9+/]{43}=?=?$/.test(mfaKey)) {
+      const buf = Buffer.from(mfaKey, 'base64');
+      if (buf.length === 32) validMfaKey = true;
+    }
+    if (!validMfaKey) {
+      errors.push('MFA_ENCRYPTION_KEY must be exactly 32 bytes (64 hex characters or 44 base64 characters).');
+    }
+    if (nodeEnv === 'production' && DEV_SECRET_PATTERNS.some((p) => mfaKey.startsWith(p))) {
+      errors.push('MFA_ENCRYPTION_KEY contains a known development default value and MUST NOT be used in production.');
+    }
+  }
+
   // 4. Database URL rules
   if (nodeEnv === 'production' && !databaseUrl) {
     errors.push('DATABASE_URL is required in production environment.');
@@ -97,6 +116,7 @@ export function validateEnv(customEnv?: Record<string, string | undefined>): Ser
     PORT: port,
     JWT_SECRET: jwtSecret!,
     REFRESH_TOKEN_SECRET: refreshSecret!,
+    MFA_ENCRYPTION_KEY: mfaKey || undefined,
     DATABASE_URL: databaseUrl || undefined,
   };
 }

@@ -92,6 +92,7 @@ async function main() {
       const hasBase = entries.some((e: any) => e.idx === 0);
       const hasSessionPrevHash = entries.some((e: any) => e.tag?.includes('previous_refresh_token_hash') || e.idx === 1);
       const hasSessionReplayHistory = entries.some((e: any) => e.tag?.includes('session_replay_history') || e.idx === 2);
+      const hasMfaStepUp = entries.some((e: any) => e.tag?.includes('platform_mfa_step_up') || e.idx === 3);
 
       if (!hasBase) {
         console.error(`❌ Migration journal missing baseline migration (idx 0).`);
@@ -105,8 +106,12 @@ async function main() {
         console.error(`❌ Migration journal missing platform_sessions replay history migration (idx 2).`);
         failures++;
       }
+      if (!hasMfaStepUp) {
+        console.error(`❌ Migration journal missing platform_mfa_step_up migration (idx 3).`);
+        failures++;
+      }
 
-      if (hasBase && hasSessionPrevHash && hasSessionReplayHistory) {
+      if (hasBase && hasSessionPrevHash && hasSessionReplayHistory && hasMfaStepUp) {
         console.log(`  ✓ Migration journal verified: ${entries.length} versioned migration(s) tracked.`);
       }
 
@@ -138,6 +143,20 @@ async function main() {
           failures++;
         } else {
           console.log(`  ✓ Versioned SQL migration verified: ${replayMigrationSql}`);
+        }
+      }
+
+      const mfaMigrationSql = migrationFiles.find((f) => f.includes('0003') || f.includes('platform_mfa_step_up'));
+      if (!mfaMigrationSql) {
+        console.error(`❌ SQL migration file for platform_mfa_step_up not found in drizzle/.`);
+        failures++;
+      } else {
+        const sqlContent = fs.readFileSync(path.resolve(drizzleDir, mfaMigrationSql), 'utf-8');
+        if (!sqlContent.includes('platform_mfa_credentials') || !sqlContent.includes('mfa_verified') || !sqlContent.includes('step_up_completed_at')) {
+          console.error(`❌ Migration file ${mfaMigrationSql} missing platform_mfa_credentials, mfa_verified, or step_up_completed_at.`);
+          failures++;
+        } else {
+          console.log(`  ✓ Versioned SQL migration verified: ${mfaMigrationSql}`);
         }
       }
     } catch (err: any) {

@@ -68,6 +68,8 @@ async function main() {
       assert.ok(names.has('previous_refresh_token_hash'));
       assert.ok(names.has('last_rotated_at'));
       assert.ok(names.has('token_family_history'));
+      assert.ok(names.has('mfa_verified'));
+      assert.ok(names.has('step_up_completed_at'));
 
       const second = await runDatabaseMigration({ clientOrPool: client, migrationsFolder, logger: log() });
       assert.equal(second.mode, 'noop');

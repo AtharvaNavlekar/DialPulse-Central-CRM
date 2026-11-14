@@ -2,6 +2,7 @@ import { Router, Response } from 'express';
 import { ExtendedRequest } from '../middleware/request-context.ts';
 import { requirePlatformAuth } from '../middleware/auth.ts';
 import { requirePlatformPermission } from '../middleware/authorize.ts';
+import { requireStepUpAuth } from '../middleware/step-up.ts';
 import { PLATFORM_PERMISSIONS } from '../policies/permissions.ts';
 import { getDb, isDatabaseConfigured } from '../db/index.ts';
 import { tenants } from '../db/schema.ts';
@@ -204,6 +205,7 @@ router.post(
   '/:id/suspend',
   requirePlatformAuth,
   requirePlatformPermission(PLATFORM_PERMISSIONS.TENANTS_SUSPEND),
+  requireStepUpAuth,
   async (req: ExtendedRequest, res: Response) => {
     const tenantId = req.params.id;
     const { reason } = req.body || {};
@@ -267,6 +269,7 @@ router.post(
   '/:id/reactivate',
   requirePlatformAuth,
   requirePlatformPermission(PLATFORM_PERMISSIONS.TENANTS_REACTIVATE),
+  requireStepUpAuth,
   async (req: ExtendedRequest, res: Response) => {
     const tenantId = req.params.id;
 

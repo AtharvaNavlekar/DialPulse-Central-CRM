@@ -19,10 +19,64 @@ export function signAccessToken(
     throw new Error('[CONFIG_ERROR] Cannot sign platform access token: JWT_SECRET is not configured.');
   }
 
-  return jwt.sign(payload, secret, {
+  return jwt.sign({ ...payload, purpose: payload.purpose || 'access' }, secret, {
     expiresIn: ACCESS_TOKEN_EXPIRY,
     algorithm: 'HS256',
   });
+}
+
+const MFA_CHALLENGE_EXPIRY = '5m';
+
+/**
+ * Signs a short-lived, restricted MFA challenge token (valid for 5 minutes).
+ * This token CANNOT be used to access protected platform APIs.
+ */
+export function signMfaChallengeToken(
+  payload: { sub: string; email: string; isEnrollment?: boolean },
+  secretOverride?: string
+): string {
+  const secret = secretOverride !== undefined ? secretOverride : getValidatedConfig().JWT_SECRET;
+  if (!secret || secret.trim().length === 0) {
+    throw new Error('[CONFIG_ERROR] Cannot sign MFA challenge token: JWT_SECRET is not configured.');
+  }
+
+  return jwt.sign(
+    {
+      sub: payload.sub,
+      email: payload.email,
+      isEnrollment: payload.isEnrollment ?? false,
+      purpose: 'mfa_challenge',
+    },
+    secret,
+    {
+      expiresIn: MFA_CHALLENGE_EXPIRY,
+      algorithm: 'HS256',
+    }
+  );
+}
+
+/**
+ * Cryptographically verifies an MFA challenge token and confirms its restricted purpose.
+ */
+export function verifyMfaChallengeToken(
+  token: string,
+  secretOverride?: string
+): { sub: string; email: string; isEnrollment?: boolean } {
+  const secret = secretOverride !== undefined ? secretOverride : getValidatedConfig().JWT_SECRET;
+  if (!secret || secret.trim().length === 0) {
+    throw new Error('[CONFIG_ERROR] Cannot verify MFA challenge token: JWT_SECRET is not configured.');
+  }
+
+  const payload = jwt.verify(token, secret, { algorithms: ['HS256'] }) as any;
+  if (payload.purpose !== 'mfa_challenge') {
+    throw new Error('Invalid token purpose: expected mfa_challenge.');
+  }
+
+  return {
+    sub: payload.sub,
+    email: payload.email,
+    isEnrollment: !!payload.isEnrollment,
+  };
 }
 
 /**
