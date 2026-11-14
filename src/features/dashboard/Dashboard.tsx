@@ -14,6 +14,7 @@ import {
   Check,
   Radio,
   FileText,
+  Lock,
 } from 'lucide-react';
 import { api } from '../../app/api.ts';
 import { OverviewData, SecurityEventItem, SubsystemHealthItem } from '../../app/types.ts';
@@ -30,43 +31,32 @@ export interface DashboardProps {
   onNavigateToAudit?: () => void;
   onNavigateToSecurity?: () => void;
   onOpenDbModal?: () => void;
+  initialData?: OverviewData | null;
 }
 
-// Fallback sample errors for standalone exploration if DB is unconfigured
-const STANDALONE_SAMPLE_ERRORS: SecurityEventItem[] = [
+// Explicit standalone-only demonstration security alerts when PostgreSQL is unconfigured
+const STANDALONE_DEMO_SECURITY_EVENTS: SecurityEventItem[] = [
   {
-    id: 'sec_sim_001',
+    id: 'sec_demo_001',
     eventType: 'anomaly_voice_gateway_rate_limit',
     severity: 'high',
-    description: 'Carrier SIP trunk rate-limit triggered for tenant tnt_kuber_telecom. Auto-circuit breaker tripped.',
+    description: '[DEMO] Sample carrier SIP trunk rate-limit alert for standalone evaluation.',
     sourceIp: '198.51.100.44',
-    actorIdentifier: 'tnt_kuber_telecom',
-    metadata: JSON.stringify({ threshold: '250 calls/sec', recorded: '382 calls/sec' }),
+    actorIdentifier: 'demo_gateway_probe',
+    metadata: JSON.stringify({ mode: 'standalone_demo', threshold: '250 calls/sec' }),
     isResolved: false,
     createdAt: new Date(Date.now() - 14 * 60 * 1000).toISOString(),
   },
   {
-    id: 'sec_sim_002',
+    id: 'sec_demo_002',
     eventType: 'unauthorized_platform_access_attempt',
     severity: 'critical',
-    description: 'Tenant user token attempted direct access to /api/platform/system/seed. Segregation boundary enforced.',
+    description: '[DEMO] Sample segregation boundary check alert for standalone evaluation.',
     sourceIp: '203.0.113.19',
-    actorIdentifier: 'usr_tenant_telecaller',
-    metadata: JSON.stringify({ route: '/api/platform/system/seed', result: 'denied' }),
+    actorIdentifier: 'demo_tenant_token',
+    metadata: JSON.stringify({ mode: 'standalone_demo', result: 'denied' }),
     isResolved: false,
     createdAt: new Date(Date.now() - 48 * 60 * 1000).toISOString(),
-  },
-  {
-    id: 'sec_sim_003',
-    eventType: 'session_invalidation_mismatch',
-    severity: 'medium',
-    description: 'Stale refresh token hash presented during platform staff token rotation. Revoked immediately.',
-    sourceIp: '192.0.2.88',
-    actorIdentifier: 'usr_staff_support_01',
-    isResolved: true,
-    resolvedBy: 'security@dialpulse.internal',
-    resolvedAt: new Date(Date.now() - 120 * 60 * 1000).toISOString(),
-    createdAt: new Date(Date.now() - 180 * 60 * 1000).toISOString(),
   },
 ];
 
@@ -75,9 +65,10 @@ export const Dashboard: React.FC<DashboardProps> = ({
   onNavigateToAudit,
   onNavigateToSecurity,
   onOpenDbModal,
+  initialData,
 }) => {
-  const [data, setData] = useState<OverviewData | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [data, setData] = useState<OverviewData | null>(initialData ?? null);
+  const [loading, setLoading] = useState(initialData === undefined);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [seeding, setSeeding] = useState(false);
@@ -96,11 +87,15 @@ export const Dashboard: React.FC<DashboardProps> = ({
   const [stepUpTitle, setStepUpTitle] = useState('');
   const [pendingAction, setPendingAction] = useState<(() => Promise<void>) | null>(null);
 
-  // Standalone local error state (to allow resolving sample items when DB is unconfigured)
-  const [localErrors, setLocalErrors] = useState<SecurityEventItem[]>(STANDALONE_SAMPLE_ERRORS);
+  // Standalone demo error state (strictly isolated to standalone dev mode + SECURITY_READ)
+  const [standaloneDemoErrors, setStandaloneDemoErrors] = useState<SecurityEventItem[]>(STANDALONE_DEMO_SECURITY_EVENTS);
 
   const { hasPermission } = useAuth();
   const canManageStaff = hasPermission(PLATFORM_PERMISSIONS.STAFF_MANAGE);
+  const canReadSecurity = hasPermission(PLATFORM_PERMISSIONS.SECURITY_READ);
+  const canManageSecurity = hasPermission(PLATFORM_PERMISSIONS.SECURITY_MANAGE);
+  const canReadTenants = hasPermission(PLATFORM_PERMISSIONS.TENANTS_READ);
+  const canReadAudit = hasPermission(PLATFORM_PERMISSIONS.AUDIT_READ);
 
   const loadData = useCallback(async (isSilent = false) => {
     if (!isSilent) setLoading(true);
@@ -146,19 +141,20 @@ export const Dashboard: React.FC<DashboardProps> = ({
   };
 
   const handleResolveError = async (eventId: string) => {
+    if (!canManageSecurity) return;
     setResolvingId(eventId);
     try {
       if (data?.platformState.databaseConnected) {
         await api.resolveSecurityEvent(eventId);
         await loadData(true);
-      } else {
-        setLocalErrors((prev) =>
+      } else if (data?.platformState.mode === 'STANDALONE_EVALUATION') {
+        setStandaloneDemoErrors((prev) =>
           prev.map((item) =>
             item.id === eventId
               ? {
                   ...item,
                   isResolved: true,
-                  resolvedBy: 'admin@dialpulse.internal',
+                  resolvedBy: 'standalone-demo',
                   resolvedAt: new Date().toISOString(),
                 }
               : item
@@ -175,19 +171,33 @@ export const Dashboard: React.FC<DashboardProps> = ({
         setStepUpOpen(true);
         return;
       }
-      console.error('Failed to resolve incident:', err);
+      setError(err.message || 'Failed to resolve security incident');
     } finally {
       setResolvingId(null);
     }
   };
 
-  // Compile active errors list
+  const isDbConnected = data?.platformState.databaseConnected ?? false;
+  const isSecurityRestricted = !canReadSecurity || data?.security?.status === 'restricted';
+  const isTenantsRestricted = !canReadTenants || data?.tenants?.status === 'restricted';
+  const isAuditRestricted = !canReadAudit || data?.audit?.status === 'restricted';
+  const isStandaloneDemoMode = Boolean(
+    data && !data.platformState.databaseConnected && data.platformState.mode === 'STANDALONE_EVALUATION' && !error
+  );
+
+  // Authoritative security incidents list (never leak or fabricate when DB connected or restricted)
   const allErrors: SecurityEventItem[] = useMemo(() => {
-    if (data?.platformState.databaseConnected && data.security?.recentEvents?.length) {
-      return data.security.recentEvents;
+    if (isSecurityRestricted) {
+      return [];
     }
-    return localErrors;
-  }, [data, localErrors]);
+    if (isDbConnected) {
+      return data?.security?.recentEvents ?? [];
+    }
+    if (isStandaloneDemoMode) {
+      return standaloneDemoErrors;
+    }
+    return [];
+  }, [data, isDbConnected, isSecurityRestricted, isStandaloneDemoMode, standaloneDemoErrors]);
 
   const filteredErrors = useMemo(() => {
     return allErrors.filter((item) => {
@@ -212,105 +222,57 @@ export const Dashboard: React.FC<DashboardProps> = ({
   }, [allErrors, severityFilter, showResolved, searchQuery]);
 
   const unresolvedCount = useMemo(() => {
+    if (isSecurityRestricted) return null;
+    if (isDbConnected && typeof data?.security?.unresolvedCount === 'number') {
+      return data.security.unresolvedCount;
+    }
     return allErrors.filter((e) => !e.isResolved).length;
-  }, [allErrors]);
+  }, [allErrors, data?.security?.unresolvedCount, isDbConnected, isSecurityRestricted]);
 
   const criticalErrorsCount = useMemo(() => {
+    if (isSecurityRestricted) return null;
+    if (isDbConnected && typeof data?.security?.criticalCount === 'number') {
+      return data.security.criticalCount;
+    }
     return allErrors.filter((e) => !e.isResolved && e.severity === 'critical').length;
-  }, [allErrors]);
+  }, [allErrors, data?.security?.criticalCount, isDbConnected, isSecurityRestricted]);
 
   // Subsystems data
   const subsystems: SubsystemHealthItem[] = useMemo(() => {
     if (data?.subsystems && data.subsystems.length > 0) {
       return data.subsystems;
     }
-    const isDb = data?.platformState.databaseConnected ?? false;
-    return [
-      {
-        id: 'sub_postgres',
-        name: 'PostgreSQL Database',
-        status: isDb ? 'healthy' : 'degraded',
-        metric: isDb ? `${data?.health.database.latencyMs ?? 2}ms probe` : 'Disconnected',
-        latencyMs: isDb ? data?.health.database.latencyMs ?? 2 : null,
-        description: isDb
-          ? 'Authoritative persistence pool active via Drizzle ORM'
-          : 'Awaiting DATABASE_URL connection in environment',
-        lastChecked: new Date().toISOString(),
-      },
-      {
-        id: 'sub_auth',
-        name: 'Auth Authority & RBAC',
-        status: 'healthy',
-        metric: isDb ? `${data?.health.activeSessionsCount ?? 1} active sessions` : 'In-Memory Store',
-        latencyMs: 1,
-        description: 'HMAC token verification & tenant role segregation',
-        lastChecked: new Date().toISOString(),
-      },
-      {
-        id: 'sub_audit',
-        name: 'Platform Audit Trail',
-        status: 'healthy',
-        metric: isDb ? `${data?.audit.recentEvents.length ?? 0} events` : 'Streaming stdout',
-        latencyMs: 1,
-        description: 'Immutable sensitive action logging & non-repudiation',
-        lastChecked: new Date().toISOString(),
-      },
-      {
-        id: 'sub_telephony',
-        name: 'Telephony & Webhook Gateway',
-        status: 'healthy',
-        metric: 'Nominal',
-        latencyMs: 3,
-        description: 'SIP carrier trunking & circuit-breaker nominal',
-        lastChecked: new Date().toISOString(),
-      },
-      {
-        id: 'sub_runtime',
-        name: 'Platform Control Node',
-        status: 'healthy',
-        metric: `${data?.health.nodeUptimeSeconds ?? 0}s uptime`,
-        latencyMs: 2,
-        description: `Node.js ${data?.health.environment ?? 'production'} · Heap ${data?.health.memoryUsageMb ?? 64} MB`,
-        lastChecked: new Date().toISOString(),
-      },
-    ];
+    return [];
   }, [data]);
 
-  // Active users statistics calculation
+  // Authoritative active users metrics (zero hardcoded tenant seat fabrications)
   const activeUsersMetrics = useMemo(() => {
     if (data?.activeUsers && data.activeUsers.status === 'available') {
       return {
         totalTenantUsers: data.activeUsers.totalActiveUsers ?? 0,
         totalCapacity: data.activeUsers.totalMaxCapacity ?? 0,
-        staffSessions: data.activeUsers.activeStaffSessions ?? 1,
-        staffIdentities: data.activeUsers.totalStaffUsers ?? 3,
+        staffSessions: data.activeUsers.activeStaffSessions ?? 0,
+        staffIdentities: data.activeUsers.totalStaffUsers ?? 0,
         utilization: data.activeUsers.utilizationPercent ?? 0,
-        isAuthoritativeDb: true,
-      };
-    }
-    if (data?.tenants.items && data.tenants.items.length > 0) {
-      const active = data.tenants.items.reduce((acc, t) => acc + (t.activeUsersCount || 0), 0);
-      const cap = data.tenants.items.reduce((acc, t) => acc + (t.maxUsers || 0), 0);
-      return {
-        totalTenantUsers: active,
-        totalCapacity: cap,
-        staffSessions: data.health.activeSessionsCount ?? 1,
-        staffIdentities: 3,
-        utilization: cap > 0 ? Math.round((active / cap) * 1000) / 10 : 0,
-        isAuthoritativeDb: true,
+        isAvailable: true,
       };
     }
     return {
-      totalTenantUsers: 144,
-      totalCapacity: 420,
-      staffSessions: 1,
-      staffIdentities: 3,
-      utilization: 34.2,
-      isAuthoritativeDb: false,
+      totalTenantUsers: 0,
+      totalCapacity: 0,
+      staffSessions: data?.activeUsers?.activeStaffSessions ?? 0,
+      staffIdentities: data?.activeUsers?.totalStaffUsers ?? 0,
+      utilization: 0,
+      isAvailable: false,
     };
   }, [data]);
 
-  const isDbConnected = data?.platformState.databaseConnected ?? false;
+  const tenantItems = useMemo(() => {
+    if (isTenantsRestricted || data?.tenants.status !== 'available') {
+      return [];
+    }
+    return data.tenants.items ?? [];
+  }, [data, isTenantsRestricted]);
 
   const formatRelativeTime = (isoString: string) => {
     try {
@@ -340,7 +302,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
       <div className="p-8 flex flex-col items-center justify-center min-h-[460px]">
         <RefreshCw className="w-8 h-8 text-[#00695C] animate-spin mb-3" />
         <p className="text-sm font-semibold text-slate-900">Initializing DialPulse Platform Dashboard...</p>
-        <p className="text-xs text-slate-500 font-mono mt-1">Querying active users, error feeds & subsystem health</p>
+        <p className="text-xs text-slate-500 font-mono mt-1">Querying active users, security permissions & subsystem health</p>
       </div>
     );
   }
@@ -363,7 +325,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
       <PageHeader
         categoryTag="CENTRAL OPERATIONS"
         title="Platform Control Dashboard"
-        description="Authoritative operational telemetry, active user capacity, recent platform errors, and real-time subsystem health status."
+        description="Authoritative operational telemetry, active user capacity, security triage, and real-time subsystem health status."
         actions={
           <div className="flex flex-wrap items-center gap-2">
             <div className="hidden sm:flex items-center gap-1.5 px-3 py-2 rounded-[12px] bg-white border border-slate-200 text-xs text-slate-500 font-mono">
@@ -407,6 +369,14 @@ export const Dashboard: React.FC<DashboardProps> = ({
         }
       />
 
+      {error && (
+        <ErrorBanner
+          title="Telemetry Refresh Failed"
+          message={error}
+          onRetry={() => loadData(false)}
+        />
+      )}
+
       {/* Mode Status Banner */}
       <div
         className={`p-4 rounded-[18px] border flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-2xs ${
@@ -441,7 +411,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
             <p className="text-xs text-slate-600 mt-1 max-w-2xl leading-relaxed">
               {isDbConnected
                 ? 'All tenant seat allocations, security incidents, staff sessions, and audit entries are persisted to PostgreSQL via Drizzle ORM.'
-                : 'DialPulse is executing in standalone mode without DATABASE_URL. Live role-permission boundaries and authentication authority are enforced in-memory.'}
+                : 'DialPulse is executing in standalone mode without DATABASE_URL. Tenant metrics await PostgreSQL connection; role-permission boundaries remain enforced.'}
             </p>
           </div>
         </div>
@@ -489,9 +459,11 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
             <div className="flex items-baseline gap-2">
               <span className="text-3xl font-extrabold font-display text-slate-900 tracking-tight font-mono tabular-nums">
-                {activeUsersMetrics.totalTenantUsers}
+                {activeUsersMetrics.isAvailable ? activeUsersMetrics.totalTenantUsers : '--'}
               </span>
-              <span className="text-xs font-mono text-slate-500">seats active</span>
+              <span className="text-xs font-mono text-slate-500">
+                {activeUsersMetrics.isAvailable ? 'seats active' : 'awaiting DB'}
+              </span>
             </div>
 
             <p className="text-xs text-slate-500 mt-1.5 tabular-nums">
@@ -501,9 +473,11 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
           <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
             <span className="font-mono text-[11px] tabular-nums">
-              {activeUsersMetrics.utilization}% of {activeUsersMetrics.totalCapacity} capacity
+              {activeUsersMetrics.isAvailable
+                ? `${activeUsersMetrics.utilization}% of ${activeUsersMetrics.totalCapacity} capacity`
+                : 'PostgreSQL required'}
             </span>
-            {onNavigateToTenants && (
+            {canReadTenants && onNavigateToTenants && (
               <button
                 onClick={onNavigateToTenants}
                 className="text-[#00695C] hover:text-[#004D40] font-bold text-xs inline-flex items-center gap-1 hover:underline cursor-pointer"
@@ -553,61 +527,89 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
           <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-slate-500 font-mono text-[11px]">
             <span className="tabular-nums">Uptime: {formatUptime(data?.health.nodeUptimeSeconds ?? 0)}</span>
-            <span className="tabular-nums">Heap: {data?.health.memoryUsageMb ?? 64} MB</span>
+            <span className="tabular-nums">Heap: {data?.health.memoryUsageMb ?? 0} MB</span>
           </div>
         </div>
 
-        {/* Card 3: Recent Errors & Incidents */}
+        {/* Card 3: Recent Errors & Incidents (RBAC-Gated) */}
         <div className="p-5 rounded-[18px] bg-white border border-slate-200 shadow-xs flex flex-col justify-between">
-          <div>
-            <div className="flex items-center justify-between gap-2 mb-3">
-              <span className="text-[11px] font-mono font-semibold uppercase tracking-wider text-slate-500">
-                Recent Errors
-              </span>
-              <div
-                className={`w-8 h-8 rounded-[10px] flex items-center justify-center shrink-0 border ${
-                  unresolvedCount > 0
-                    ? 'bg-red-50 text-[#BA1A1A] border-red-200'
-                    : 'bg-emerald-50 text-[#00695C] border-emerald-200'
-                }`}
-              >
-                <ShieldAlert className="w-4 h-4" />
+          {isSecurityRestricted ? (
+            <>
+              <div>
+                <div className="flex items-center justify-between gap-2 mb-3">
+                  <span className="text-[11px] font-mono font-semibold uppercase tracking-wider text-slate-500">
+                    Security Incidents
+                  </span>
+                  <div className="w-8 h-8 rounded-[10px] bg-slate-100 text-slate-600 border border-slate-200 flex items-center justify-center shrink-0">
+                    <Lock className="w-4 h-4" />
+                  </div>
+                </div>
+                <div className="text-lg font-extrabold font-display text-slate-700 tracking-tight">
+                  Restricted
+                </div>
+                <p className="text-xs text-slate-500 mt-1.5 leading-snug">
+                  Requires <span className="font-mono">platform:security:read</span> permission.
+                </p>
               </div>
-            </div>
+              <div className="mt-4 pt-3 border-t border-slate-100 text-[11px] font-mono text-slate-500">
+                Hidden by RBAC boundary
+              </div>
+            </>
+          ) : (
+            <>
+              <div>
+                <div className="flex items-center justify-between gap-2 mb-3">
+                  <span className="text-[11px] font-mono font-semibold uppercase tracking-wider text-slate-500">
+                    Recent Errors
+                  </span>
+                  <div
+                    className={`w-8 h-8 rounded-[10px] flex items-center justify-center shrink-0 border ${
+                      (unresolvedCount ?? 0) > 0
+                        ? 'bg-red-50 text-[#BA1A1A] border-red-200'
+                        : 'bg-emerald-50 text-[#00695C] border-emerald-200'
+                    }`}
+                  >
+                    <ShieldAlert className="w-4 h-4" />
+                  </div>
+                </div>
 
-            <div className="flex items-baseline gap-2">
-              <span className="text-3xl font-extrabold font-display text-slate-900 tracking-tight font-mono tabular-nums">
-                {unresolvedCount}
-              </span>
-              <span className="text-xs font-mono text-slate-500">unresolved</span>
-            </div>
+                <div className="flex items-baseline gap-2">
+                  <span className="text-3xl font-extrabold font-display text-slate-900 tracking-tight font-mono tabular-nums">
+                    {unresolvedCount ?? 0}
+                  </span>
+                  <span className="text-xs font-mono text-slate-500">unresolved</span>
+                </div>
 
-            <p className="text-xs text-slate-500 mt-1.5">
-              {criticalErrorsCount > 0 ? (
-                <span className="text-[#BA1A1A] font-bold font-mono tabular-nums">
-                  {criticalErrorsCount} critical alert{criticalErrorsCount > 1 ? 's' : ''}
+                <p className="text-xs text-slate-500 mt-1.5">
+                  {(criticalErrorsCount ?? 0) > 0 ? (
+                    <span className="text-[#BA1A1A] font-bold font-mono tabular-nums">
+                      {criticalErrorsCount} critical alert{(criticalErrorsCount ?? 0) > 1 ? 's' : ''}
+                    </span>
+                  ) : (
+                    '0 critical severity alerts'
+                  )}
+                </p>
+              </div>
+
+              <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
+                <span className="font-mono text-[11px] tabular-nums">
+                  {isStandaloneDemoMode ? `${allErrors.length} demo alerts` : `${allErrors.length} total in feed`}
                 </span>
-              ) : (
-                '0 critical severity alerts'
-              )}
-            </p>
-          </div>
-
-          <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
-            <span className="font-mono text-[11px] tabular-nums">{allErrors.length} total in feed</span>
-            {onNavigateToSecurity && (
-              <button
-                onClick={onNavigateToSecurity}
-                className="text-[#00695C] hover:text-[#004D40] font-bold text-xs inline-flex items-center gap-1 hover:underline cursor-pointer"
-              >
-                <span>Triage</span>
-                <ArrowRight className="w-3 h-3" />
-              </button>
-            )}
-          </div>
+                {onNavigateToSecurity && (
+                  <button
+                    onClick={onNavigateToSecurity}
+                    className="text-[#00695C] hover:text-[#004D40] font-bold text-xs inline-flex items-center gap-1 hover:underline cursor-pointer"
+                  >
+                    <span>Triage</span>
+                    <ArrowRight className="w-3 h-3" />
+                  </button>
+                )}
+              </div>
+            </>
+          )}
         </div>
 
-        {/* Card 4: Customer Tenants */}
+        {/* Card 4: Customer Tenants (Strictly DB-backed) */}
         <div className="p-5 rounded-[18px] bg-white border border-slate-200 shadow-xs flex flex-col justify-between">
           <div>
             <div className="flex items-center justify-between gap-2 mb-3">
@@ -619,21 +621,42 @@ export const Dashboard: React.FC<DashboardProps> = ({
               </div>
             </div>
 
-            <div className="flex items-baseline gap-2">
-              <span className="text-3xl font-extrabold font-display text-slate-900 tracking-tight font-mono tabular-nums">
-                {data?.tenants.total ?? (isDbConnected ? 0 : 4)}
-              </span>
-              <span className="text-xs font-mono text-slate-500">accounts</span>
-            </div>
+            {isTenantsRestricted ? (
+              <>
+                <div className="text-lg font-extrabold font-display text-slate-700 tracking-tight">
+                  Restricted
+                </div>
+                <p className="text-xs text-slate-500 mt-1.5">
+                  Requires <span className="font-mono">platform:tenants:read</span>
+                </p>
+              </>
+            ) : (
+              <>
+                <div className="flex items-baseline gap-2">
+                  <span className="text-3xl font-extrabold font-display text-slate-900 tracking-tight font-mono tabular-nums">
+                    {data?.tenants.status === 'available' ? (data.tenants.total ?? 0) : '--'}
+                  </span>
+                  <span className="text-xs font-mono text-slate-500">
+                    {data?.tenants.status === 'available' ? 'accounts' : 'awaiting DB'}
+                  </span>
+                </div>
 
-            <p className="text-xs text-slate-500 mt-1.5 tabular-nums">
-              {data?.tenants.active ?? (isDbConnected ? 0 : 2)} active · {data?.tenants.suspended ?? (isDbConnected ? 0 : 1)} suspended
-            </p>
+                <p className="text-xs text-slate-500 mt-1.5 tabular-nums">
+                  {data?.tenants.status === 'available'
+                    ? `${data.tenants.active ?? 0} active · ${data.tenants.suspended ?? 0} suspended`
+                    : 'PostgreSQL registry disconnected'}
+                </p>
+              </>
+            )}
           </div>
 
           <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
-            <span className="font-mono text-[11px]">Region: ap-south-1</span>
-            {onNavigateToTenants && (
+            <span className="font-mono text-[11px]">
+              {data?.tenants.status === 'available'
+                ? `${data.tenants.provisioning ?? 0} provisioning`
+                : 'Region: ap-south-1'}
+            </span>
+            {canReadTenants && onNavigateToTenants && (
               <button
                 onClick={onNavigateToTenants}
                 className="text-[#00695C] hover:text-[#004D40] font-bold text-xs inline-flex items-center gap-1 hover:underline cursor-pointer"
@@ -705,181 +728,207 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
       {/* TWO-COLUMN SECTION: RECENT ERRORS & ACTIVE USER CAPACITY */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        {/* Left Column: Recent Errors & Security Incidents (7 cols) */}
+        {/* Left Column: Recent Errors & Security Incidents (7 cols, RBAC-protected) */}
         <div className="lg:col-span-7">
           <Card variant="default" rounded="2xl" className="overflow-hidden flex flex-col h-full">
-            {/* Header with filters */}
-            <div className="px-5 py-4 border-b border-slate-200 bg-slate-50/70">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                <div>
-                  <div className="flex items-center gap-2">
-                    <h3 className="font-display font-bold text-sm text-slate-900">
-                      Recent Errors & Security Incidents
-                    </h3>
-                    <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-[6px] bg-slate-200/80 text-slate-800 border border-slate-300/70 tabular-nums">
-                      {filteredErrors.length}
-                    </span>
-                  </div>
-                  <p className="text-xs text-slate-600 mt-0.5">
-                    Live SOC alerts, carrier circuit-breaker trips, and unauthorized platform attempts
+            {isSecurityRestricted ? (
+              <div className="p-8 sm:p-12 text-center flex flex-col items-center justify-center flex-1 min-h-[320px] space-y-3">
+                <div className="w-12 h-12 rounded-[14px] bg-slate-100 border border-slate-200 flex items-center justify-center text-slate-600">
+                  <Lock className="w-6 h-6" />
+                </div>
+                <div className="space-y-1">
+                  <h3 className="font-display font-bold text-sm text-slate-900">
+                    Security Event Feed Restricted
+                  </h3>
+                  <p className="text-xs text-slate-600 max-w-sm mx-auto leading-relaxed">
+                    SOC alerts and platform security incidents are hidden for your role. Access requires the{' '}
+                    <span className="font-mono font-semibold text-slate-900">platform:security:read</span> permission.
                   </p>
                 </div>
-
-                {onNavigateToSecurity && (
-                  <button
-                    onClick={onNavigateToSecurity}
-                    className="text-xs font-bold text-[#00695C] hover:text-[#004D40] hover:underline cursor-pointer whitespace-nowrap shrink-0 self-start sm:self-auto"
-                  >
-                    Full SOC Console →
-                  </button>
-                )}
               </div>
+            ) : (
+              <>
+                {/* Header with filters */}
+                <div className="px-5 py-4 border-b border-slate-200 bg-slate-50/70">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <h3 className="font-display font-bold text-sm text-slate-900">
+                          Recent Errors & Security Incidents
+                        </h3>
+                        <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-[6px] bg-slate-200/80 text-slate-800 border border-slate-300/70 tabular-nums">
+                          {filteredErrors.length}
+                        </span>
+                        {isStandaloneDemoMode && (
+                          <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-[6px] bg-amber-50 text-amber-800 border border-amber-200">
+                            STANDALONE DEMO DATA
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-xs text-slate-600 mt-0.5">
+                        {isStandaloneDemoMode
+                          ? 'Demonstration security alerts shown because PostgreSQL is disconnected'
+                          : 'Live SOC alerts, carrier circuit-breaker trips, and unauthorized platform attempts'}
+                      </p>
+                    </div>
 
-              {/* Filter controls */}
-              <div className="mt-3.5 pt-3 border-t border-slate-200 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5">
-                {/* Severity Tabs */}
-                <div className="flex items-center gap-1 p-1 rounded-[10px] bg-slate-100 border border-slate-200 overflow-x-auto">
-                  {(['all', 'critical', 'high', 'medium', 'low'] as const).map((sev) => (
-                    <button
-                      key={sev}
-                      onClick={() => setSeverityFilter(sev)}
-                      className={`text-[11px] font-mono uppercase px-2.5 py-1 rounded-[8px] transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
-                        severityFilter === sev
-                          ? 'bg-[#00695C] text-white font-bold shadow-2xs'
-                          : 'text-slate-700 hover:bg-white font-medium'
-                      }`}
-                    >
-                      {sev}
-                    </button>
-                  ))}
-                </div>
-
-                {/* Search & Resolved toggle */}
-                <div className="flex items-center gap-2">
-                  <div className="relative flex-1 sm:w-44">
-                    <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
-                    <input
-                      type="text"
-                      value={searchQuery}
-                      onChange={(e) => setSearchQuery(e.target.value)}
-                      placeholder="Filter errors..."
-                      className="w-full pl-8 pr-2.5 py-1.5 text-xs bg-white text-slate-900 placeholder:text-slate-400 border border-slate-200 rounded-[10px] focus:outline-none focus:border-[#00695C] focus:ring-2 focus:ring-[#00695C]/15"
-                    />
-                  </div>
-
-                  <label className="flex items-center gap-1.5 text-xs text-slate-700 cursor-pointer select-none whitespace-nowrap">
-                    <input
-                      type="checkbox"
-                      checked={showResolved}
-                      onChange={(e) => setShowResolved(e.target.checked)}
-                      className="rounded border-slate-300 accent-[#00695C] focus:ring-0"
-                    />
-                    <span className="text-[11px] font-mono font-medium">Resolved</span>
-                  </label>
-                </div>
-              </div>
-            </div>
-
-            {/* Error List Body */}
-            <div className="p-4 flex-1 overflow-y-auto max-h-[500px]">
-              {filteredErrors.length === 0 ? (
-                <div className="p-8 text-center flex flex-col items-center justify-center min-h-[220px]">
-                  <CheckCircle2 className="w-9 h-9 text-[#00695C] mb-2" />
-                  <p className="text-sm font-bold text-slate-900">Zero Unresolved Platform Errors</p>
-                  <p className="text-xs text-slate-600 max-w-sm mt-1">
-                    No active incident alerts match the current filter. All voice telephony gateways and auth gates are operating within nominal thresholds.
-                  </p>
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  {filteredErrors.map((errItem) => {
-                    const isCritical = errItem.severity === 'critical';
-                    const isHigh = errItem.severity === 'high';
-                    const isMedium = errItem.severity === 'medium';
-                    const isResolving = resolvingId === errItem.id;
-
-                    const severityColor = isCritical
-                      ? 'text-[#BA1A1A] bg-red-50 border-red-200'
-                      : isHigh
-                      ? 'text-orange-800 bg-orange-50 border-orange-200'
-                      : isMedium
-                      ? 'text-amber-800 bg-amber-50 border-amber-200'
-                      : 'text-sky-800 bg-sky-50 border-sky-200';
-
-                    return (
-                      <div
-                        key={errItem.id}
-                        className={`p-3.5 rounded-[14px] border transition-all ${
-                          errItem.isResolved
-                            ? 'bg-slate-50/70 border-slate-200 opacity-75'
-                            : isCritical
-                            ? 'bg-red-50/50 border-red-200'
-                            : 'bg-slate-50 border-slate-200 hover:border-slate-300'
-                        }`}
+                    {onNavigateToSecurity && (
+                      <button
+                        onClick={onNavigateToSecurity}
+                        className="text-xs font-bold text-[#00695C] hover:text-[#004D40] hover:underline cursor-pointer whitespace-nowrap shrink-0 self-start sm:self-auto"
                       >
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="space-y-1 min-w-0">
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <span
-                                className={`text-[10px] font-mono font-bold uppercase px-2 py-0.5 rounded-[6px] border ${severityColor}`}
-                              >
-                                {errItem.severity}
-                              </span>
+                        Full SOC Console →
+                      </button>
+                    )}
+                  </div>
 
-                              <span className="font-mono text-xs font-bold text-slate-900 break-all">
-                                {errItem.eventType}
-                              </span>
+                  {/* Filter controls */}
+                  <div className="mt-3.5 pt-3 border-t border-slate-200 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5">
+                    {/* Severity Tabs */}
+                    <div className="flex items-center gap-1 p-1 rounded-[10px] bg-slate-100 border border-slate-200 overflow-x-auto">
+                      {(['all', 'critical', 'high', 'medium', 'low'] as const).map((sev) => (
+                        <button
+                          key={sev}
+                          onClick={() => setSeverityFilter(sev)}
+                          className={`text-[11px] font-mono uppercase px-2.5 py-1 rounded-[8px] transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
+                            severityFilter === sev
+                              ? 'bg-[#00695C] text-white font-bold shadow-2xs'
+                              : 'text-slate-700 hover:bg-white font-medium'
+                          }`}
+                        >
+                          {sev}
+                        </button>
+                      ))}
+                    </div>
 
-                              {errItem.isResolved ? (
-                                <span className="text-[10px] font-mono text-emerald-800 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded-[6px] font-semibold flex items-center gap-1">
-                                  <Check className="w-2.5 h-2.5" />
-                                  <span>RESOLVED</span>
-                                </span>
-                              ) : (
-                                <span className="text-[10px] font-mono text-[#BA1A1A] bg-red-50 border border-red-200 px-1.5 py-0.5 rounded-[6px] font-semibold">
-                                  OPEN
-                                </span>
+                    {/* Search & Resolved toggle */}
+                    <div className="flex items-center gap-2">
+                      <div className="relative flex-1 sm:w-44">
+                        <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+                        <input
+                          type="text"
+                          value={searchQuery}
+                          onChange={(e) => setSearchQuery(e.target.value)}
+                          placeholder="Filter errors..."
+                          className="w-full pl-8 pr-2.5 py-1.5 text-xs bg-white text-slate-900 placeholder:text-slate-400 border border-slate-200 rounded-[10px] focus:outline-none focus:border-[#00695C] focus:ring-2 focus:ring-[#00695C]/15"
+                        />
+                      </div>
+
+                      <label className="flex items-center gap-1.5 text-xs text-slate-700 cursor-pointer select-none whitespace-nowrap">
+                        <input
+                          type="checkbox"
+                          checked={showResolved}
+                          onChange={(e) => setShowResolved(e.target.checked)}
+                          className="rounded border-slate-300 accent-[#00695C] focus:ring-0"
+                        />
+                        <span className="text-[11px] font-mono font-medium">Resolved</span>
+                      </label>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Error List Body */}
+                <div className="p-4 flex-1 overflow-y-auto max-h-[500px]">
+                  {filteredErrors.length === 0 ? (
+                    <div className="p-8 text-center flex flex-col items-center justify-center min-h-[220px]">
+                      <CheckCircle2 className="w-9 h-9 text-[#00695C] mb-2" />
+                      <p className="text-sm font-bold text-slate-900">Zero Unresolved Platform Errors</p>
+                      <p className="text-xs text-slate-600 max-w-sm mt-1">
+                        No active incident alerts match the current filter. All voice telephony gateways and auth gates are operating within nominal thresholds.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {filteredErrors.map((errItem) => {
+                        const isCritical = errItem.severity === 'critical';
+                        const isHigh = errItem.severity === 'high';
+                        const isMedium = errItem.severity === 'medium';
+                        const isResolving = resolvingId === errItem.id;
+
+                        const severityColor = isCritical
+                          ? 'text-[#BA1A1A] bg-red-50 border-red-200'
+                          : isHigh
+                          ? 'text-orange-800 bg-orange-50 border-orange-200'
+                          : isMedium
+                          ? 'text-amber-800 bg-amber-50 border-amber-200'
+                          : 'text-sky-800 bg-sky-50 border-sky-200';
+
+                        return (
+                          <div
+                            key={errItem.id}
+                            className={`p-3.5 rounded-[14px] border transition-all ${
+                              errItem.isResolved
+                                ? 'bg-slate-50/70 border-slate-200 opacity-75'
+                                : isCritical
+                                ? 'bg-red-50/50 border-red-200'
+                                : 'bg-slate-50 border-slate-200 hover:border-slate-300'
+                            }`}
+                          >
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="space-y-1 min-w-0">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <span
+                                    className={`text-[10px] font-mono font-bold uppercase px-2 py-0.5 rounded-[6px] border ${severityColor}`}
+                                  >
+                                    {errItem.severity}
+                                  </span>
+
+                                  <span className="font-mono text-xs font-bold text-slate-900 break-all">
+                                    {errItem.eventType}
+                                  </span>
+
+                                  {errItem.isResolved ? (
+                                    <span className="text-[10px] font-mono text-emerald-800 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded-[6px] font-semibold flex items-center gap-1">
+                                      <Check className="w-2.5 h-2.5" />
+                                      <span>RESOLVED</span>
+                                    </span>
+                                  ) : (
+                                    <span className="text-[10px] font-mono text-[#BA1A1A] bg-red-50 border border-red-200 px-1.5 py-0.5 rounded-[6px] font-semibold">
+                                      OPEN
+                                    </span>
+                                  )}
+                                </div>
+
+                                <p className="text-xs text-slate-700 leading-relaxed pt-0.5">
+                                  {errItem.description}
+                                </p>
+
+                                <div className="flex flex-wrap items-center gap-2 text-[11px] font-mono text-slate-500 pt-1">
+                                  {errItem.actorIdentifier && (
+                                    <span>Actor: {errItem.actorIdentifier}</span>
+                                  )}
+                                  {errItem.sourceIp && (
+                                    <span>· IP: {errItem.sourceIp}</span>
+                                  )}
+                                  <span>· {formatRelativeTime(errItem.createdAt)}</span>
+                                </div>
+                              </div>
+
+                              {/* Resolve Action Button — strictly gated by SECURITY_MANAGE */}
+                              {!errItem.isResolved && canManageSecurity && (
+                                <button
+                                  onClick={() => handleResolveError(errItem.id)}
+                                  disabled={isResolving}
+                                  className="text-xs font-semibold text-[#00695C] hover:text-white bg-white hover:bg-[#00695C] border border-slate-200 hover:border-[#00695C] px-2.5 py-1.5 rounded-[10px] transition-colors whitespace-nowrap shrink-0 cursor-pointer flex items-center gap-1.5"
+                                  title="Mark incident as resolved in SOC registry"
+                                >
+                                  {isResolving ? (
+                                    <RefreshCw className="w-3 h-3 animate-spin" />
+                                  ) : (
+                                    <Check className="w-3 h-3" />
+                                  )}
+                                  <span>Resolve</span>
+                                </button>
                               )}
-                            </div>
-
-                            <p className="text-xs text-slate-700 leading-relaxed pt-0.5">
-                              {errItem.description}
-                            </p>
-
-                            <div className="flex flex-wrap items-center gap-2 text-[11px] font-mono text-slate-500 pt-1">
-                              {errItem.actorIdentifier && (
-                                <span>Actor: {errItem.actorIdentifier}</span>
-                              )}
-                              {errItem.sourceIp && (
-                                <span>· IP: {errItem.sourceIp}</span>
-                              )}
-                              <span>· {formatRelativeTime(errItem.createdAt)}</span>
                             </div>
                           </div>
-
-                          {/* Resolve Action Button */}
-                          {!errItem.isResolved && (
-                            <button
-                              onClick={() => handleResolveError(errItem.id)}
-                              disabled={isResolving}
-                              className="text-xs font-semibold text-[#00695C] hover:text-white bg-white hover:bg-[#00695C] border border-slate-200 hover:border-[#00695C] px-2.5 py-1.5 rounded-[10px] transition-colors whitespace-nowrap shrink-0 cursor-pointer flex items-center gap-1.5"
-                              title="Mark incident as resolved in SOC registry"
-                            >
-                              {isResolving ? (
-                                <RefreshCw className="w-3 h-3 animate-spin" />
-                              ) : (
-                                <Check className="w-3 h-3" />
-                              )}
-                              <span>Resolve</span>
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
-              )}
-            </div>
+              </>
+            )}
           </Card>
         </div>
 
@@ -893,11 +942,11 @@ export const Dashboard: React.FC<DashboardProps> = ({
                   Active Users & Seat Utilization
                 </h3>
                 <p className="text-xs text-slate-600">
-                  Customer seat occupancy across active tenants
+                  Authoritative customer seat occupancy across registered tenants
                 </p>
               </div>
 
-              {onNavigateToTenants && (
+              {canReadTenants && onNavigateToTenants && (
                 <button
                   onClick={onNavigateToTenants}
                   className="text-xs font-bold text-[#00695C] hover:text-[#004D40] hover:underline cursor-pointer shrink-0"
@@ -913,102 +962,103 @@ export const Dashboard: React.FC<DashboardProps> = ({
                 <div className="flex items-center justify-between text-xs mb-2 font-mono">
                   <span className="text-slate-600 font-semibold">Platform Capacity Utilization</span>
                   <span className="font-bold text-slate-900 tabular-nums">
-                    {activeUsersMetrics.totalTenantUsers} / {activeUsersMetrics.totalCapacity} ({activeUsersMetrics.utilization}%)
+                    {activeUsersMetrics.isAvailable
+                      ? `${activeUsersMetrics.totalTenantUsers} / ${activeUsersMetrics.totalCapacity} (${activeUsersMetrics.utilization}%)`
+                      : 'Awaiting DB'}
                   </span>
                 </div>
                 <div className="w-full bg-slate-200 h-2.5 rounded-full overflow-hidden border border-slate-300/50">
                   <div
                     className="bg-[#00695C] h-full transition-all duration-500 rounded-full"
-                    style={{ width: `${Math.min(activeUsersMetrics.utilization, 100)}%` }}
+                    style={{
+                      width: `${activeUsersMetrics.isAvailable ? Math.min(activeUsersMetrics.utilization, 100) : 0}%`,
+                    }}
                   />
                 </div>
                 <div className="mt-2 flex items-center justify-between text-[11px] font-mono text-slate-500 tabular-nums">
-                  <span>Available Seats: {activeUsersMetrics.totalCapacity - activeUsersMetrics.totalTenantUsers}</span>
-                  <span>4 Accounts Managed</span>
+                  <span>
+                    {activeUsersMetrics.isAvailable
+                      ? `Available Seats: ${Math.max(0, activeUsersMetrics.totalCapacity - activeUsersMetrics.totalTenantUsers)}`
+                      : 'Available Seats: --'}
+                  </span>
+                  <span>
+                    {isTenantsRestricted
+                      ? 'Tenants Restricted'
+                      : data?.tenants.status === 'available'
+                      ? `${data.tenants.total ?? 0} Accounts Managed`
+                      : '0 Connected Accounts'}
+                  </span>
                 </div>
               </div>
 
-              {/* Tenant breakdown list */}
+              {/* Authoritative Tenant Breakdown List */}
               <div className="space-y-2.5">
                 <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500 font-mono">
                   Active Tenant Seat Load
                 </div>
 
-                {[
-                  {
-                    name: 'Apex Global Logistics Pvt Ltd',
-                    plan: 'Enterprise',
-                    active: 94,
-                    max: 150,
-                    region: 'ap-south-1',
-                    status: 'active',
-                  },
-                  {
-                    name: 'Zenith Capital Advisors',
-                    plan: 'Growth',
-                    active: 38,
-                    max: 50,
-                    region: 'ap-south-1',
-                    status: 'active',
-                  },
-                  {
-                    name: 'Kuber TeleServices LLP',
-                    plan: 'Starter',
-                    active: 12,
-                    max: 20,
-                    region: 'ap-south-1',
-                    status: 'suspended',
-                  },
-                  {
-                    name: 'NovaFast Healthcare Systems',
-                    plan: 'Enterprise',
-                    active: 0,
-                    max: 200,
-                    region: 'ap-south-1',
-                    status: 'provisioning',
-                  },
-                ].map((t) => {
-                  const percent = t.max > 0 ? Math.round((t.active / t.max) * 100) : 0;
-                  return (
-                    <div
-                      key={t.name}
-                      className="p-3 rounded-[14px] bg-slate-50 border border-slate-200 text-xs space-y-1.5"
-                    >
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="font-semibold text-slate-900 truncate">
-                          {t.name}
-                        </span>
-                        <span className="font-mono text-[11px] text-slate-500 tabular-nums shrink-0">
-                          {t.active} / {t.max} seats
-                        </span>
-                      </div>
+                {isTenantsRestricted ? (
+                  <div className="p-4 rounded-[14px] bg-slate-50 border border-slate-200 text-xs text-slate-600">
+                    Tenant workload breakdown requires <span className="font-mono font-semibold">platform:tenants:read</span>.
+                  </div>
+                ) : !isDbConnected ? (
+                  <div className="p-4 rounded-[14px] bg-slate-50 border border-slate-200 text-xs text-slate-600 space-y-1">
+                    <div className="font-semibold text-slate-800">PostgreSQL Database Required</div>
+                    <p className="text-[11px] text-slate-500 leading-relaxed">
+                      Connect PostgreSQL (<span className="font-mono">DATABASE_URL</span>) to load live tenant seat utilization from the authoritative <span className="font-mono">tenants</span> table.
+                    </p>
+                  </div>
+                ) : tenantItems.length === 0 ? (
+                  <div className="p-4 rounded-[14px] bg-slate-50 border border-slate-200 text-xs text-slate-600 space-y-1">
+                    <div className="font-semibold text-slate-800">No Tenant Accounts Registered</div>
+                    <p className="text-[11px] text-slate-500 leading-relaxed">
+                      Zero tenant records exist in PostgreSQL. Provision a tenant in Tenant Management to monitor seat utilization.
+                    </p>
+                  </div>
+                ) : (
+                  tenantItems.map((t) => {
+                    const percent = t.maxUsers > 0 ? Math.min(100, Math.round((t.activeUsersCount / t.maxUsers) * 100)) : 0;
+                    return (
+                      <div
+                        key={t.id}
+                        className="p-3 rounded-[14px] bg-slate-50 border border-slate-200 text-xs space-y-1.5"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="font-semibold text-slate-900 truncate">
+                            {t.name}
+                          </span>
+                          <span className="font-mono text-[11px] text-slate-500 tabular-nums shrink-0">
+                            {t.activeUsersCount} / {t.maxUsers} seats
+                          </span>
+                        </div>
 
-                      <div className="w-full bg-slate-200 h-2 rounded-full overflow-hidden">
-                        <div
-                          className={`h-full rounded-full ${
-                            t.status === 'suspended' ? 'bg-[#BA1A1A]' : 'bg-[#00695C]'
-                          }`}
-                          style={{ width: `${percent}%` }}
-                        />
-                      </div>
+                        <div className="w-full bg-slate-200 h-2 rounded-full overflow-hidden">
+                          <div
+                            className={`h-full rounded-full ${
+                              t.status === 'suspended' ? 'bg-[#BA1A1A]' : 'bg-[#00695C]'
+                            }`}
+                            style={{ width: `${percent}%` }}
+                          />
+                        </div>
 
-                      <div className="flex items-center justify-between text-[11px] font-mono text-slate-500">
-                        <span>{t.plan} · {t.region}</span>
-                        <span
-                          className={`uppercase text-[10px] font-bold ${
-                            t.status === 'active'
-                              ? 'text-[#00695C]'
-                              : t.status === 'suspended'
-                              ? 'text-[#BA1A1A]'
-                              : 'text-amber-700'
-                          }`}
-                        >
-                          {t.status}
-                        </span>
+                        <div className="flex items-center justify-between text-[11px] font-mono text-slate-500">
+                          <span className="capitalize">{t.plan} · {t.region}</span>
+                          <span
+                            className={`uppercase text-[10px] font-bold ${
+                              t.status === 'active'
+                                ? 'text-[#00695C]'
+                                : t.status === 'suspended'
+                                ? 'text-[#BA1A1A]'
+                                : 'text-amber-700'
+                            }`}
+                          >
+                            {t.status}
+                          </span>
+                        </div>
                       </div>
-                    </div>
-                  );
-                })}
+                    );
+                  })
+                )}
               </div>
             </div>
           </Card>
@@ -1024,12 +1074,14 @@ export const Dashboard: React.FC<DashboardProps> = ({
                   Global Platform Audit Log
                 </div>
                 <div className="text-[11px] text-slate-500 font-mono tabular-nums">
-                  {data?.audit.recentEvents.length ?? 0} sensitive actions recorded
+                  {isAuditRestricted
+                    ? 'Restricted by role policy'
+                    : `${data?.audit.recentEvents.length ?? 0} recent actions fetched`}
                 </div>
               </div>
             </div>
 
-            {onNavigateToAudit && (
+            {canReadAudit && onNavigateToAudit && (
               <Button
                 variant="outlined"
                 size="sm"

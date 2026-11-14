@@ -14,8 +14,20 @@ import {
   REGISTERED_REQUIREMENTS,
   PROJECT_SUBSYSTEM_STATUS,
 } from '../sdlc/registry.ts';
+import { PRIVACY_POLICY_DOCUMENT } from '../compliance/it-act.ts';
 
 const router = Router();
+
+/**
+ * GET /api/platform/system/privacy-policy
+ * Public SPDI Rules 2011 / IT Act privacy policy & Grievance Officer disclosure
+ */
+router.get('/privacy-policy', (_req: ExtendedRequest, res: Response) => {
+  res.json({
+    policy: PRIVACY_POLICY_DOCUMENT,
+    timestamp: new Date().toISOString(),
+  });
+});
 
 /**
  * GET /api/platform/system/health

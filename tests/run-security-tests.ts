@@ -22,9 +22,10 @@ import { runMfaTests } from './mfa.test.ts';
 import { signAccessToken } from '../src/server/auth/token.ts';
 import { validatePlatformAuthorization, AuthoritativeDataStore, AuthoritativeUserRecord, AuthoritativeSessionRecord } from '../src/server/auth/authoritative-validator.ts';
 import { PLATFORM_PERMISSIONS, PlatformPermission } from '../src/server/policies/permissions.ts';
-import { TENANT_ROLES } from '../src/server/policies/rbac.ts';
+import { PLATFORM_ROLES, TENANT_ROLES } from '../src/server/policies/rbac.ts';
 import { AuditService } from '../src/server/audit/service.ts';
 import { requestContextMiddleware } from '../src/server/middleware/request-context.ts';
+import overviewRouter from '../src/server/routes/overview.ts';
 import tenantsRouter from '../src/server/routes/tenants.ts';
 import securityRouter from '../src/server/routes/security.ts';
 import impersonationRouter from '../src/server/routes/impersonation.ts';
@@ -541,9 +542,78 @@ async function main() {
     console.log('  ✓ Gate 14: Platform MFA & Step-up Authentication Lifecycle verified');
   }
 
+  // Gate 15: Negative RBAC Check — Overview Security Event Filtering
+  {
+    const store = new SecurityGateTestStore();
+    store.users.set('usr_supp_ov', {
+      id: 'usr_supp_ov',
+      email: 'support.ov@dialpulse.internal',
+      fullName: 'Support Overview',
+      platformRole: 'platform_support',
+      isPlatformStaff: true,
+      isActive: true,
+    });
+    store.sessions.set('ses_supp_ov', {
+      id: 'ses_supp_ov',
+      userId: 'usr_supp_ov',
+      isRevoked: false,
+      expiresAt: new Date(Date.now() + 3600000),
+    });
+    store.setRolePermissions('platform_support', [...PLATFORM_ROLES.platform_support.permissions]);
+
+    const token = signAccessToken({
+      sub: 'usr_supp_ov',
+      email: 'support.ov@dialpulse.internal',
+      sessionId: 'ses_supp_ov',
+    });
+
+    const app = express();
+    app.use(express.json());
+    app.use(requestContextMiddleware);
+    app.set('authoritativeStore', store);
+    app.set('overviewDataProvider', async () => ({
+      databaseConnected: true,
+      latencyMs: 2,
+      tenants: [],
+      securityEvents: [
+        {
+          id: 'sec_restricted_1',
+          eventType: 'secret_threat_alert',
+          severity: 'critical',
+          description: 'Restricted security event',
+          isResolved: false,
+          createdAt: new Date().toISOString(),
+        },
+      ],
+      unresolvedSecurityCount: 9,
+      criticalSecurityCount: 3,
+      recentAudits: [],
+      activeSessionsCount: 1,
+      activeStaffCount: 3,
+    }));
+    app.use('/api/platform/overview', overviewRouter);
+
+    const server = http.createServer(app);
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', () => resolve()));
+
+    try {
+      const res = await makeRequest(server, '/api/platform/overview', 'GET', {
+        authorization: `Bearer ${token}`,
+      });
+      assert.strictEqual(res.status, 200);
+      assert.strictEqual(res.body.security.status, 'restricted');
+      assert.strictEqual(res.body.security.unresolvedCount, null);
+      assert.deepStrictEqual(res.body.security.recentEvents, []);
+      assert.deepStrictEqual(res.body.recentErrors, []);
+      console.log('  ✓ Gate 15: Overview endpoint strips restricted security events for platform_support');
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  }
+
   const duration = Date.now() - startTime;
   console.log(`\n====================================================`);
-  console.log(`✓ ALL 14 AUTOMATED SECURITY GATES VERIFIED (${duration}ms)`);
+  console.log(`✓ ALL 15 AUTOMATED SECURITY GATES VERIFIED (${duration}ms)`);
   console.log(`====================================================\n`);
   process.exit(0);
 }

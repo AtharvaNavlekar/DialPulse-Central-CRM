@@ -1,4 +1,5 @@
 import React from 'react';
+import { NavLink } from 'react-router-dom';
 import {
   LayoutDashboard,
   Building2,
@@ -15,122 +16,38 @@ import {
   X,
 } from 'lucide-react';
 import { useAuth } from '../../app/AuthContext.tsx';
+import { NavItemKey, PLATFORM_NAV_ROUTES } from '../../app/routes.ts';
 import { PLATFORM_PERMISSIONS } from '../../server/policies/permissions.ts';
 import { Logo } from '../common/Logo.tsx';
 
-export type NavItemKey =
-  | 'overview'
-  | 'tenants'
-  | 'billing'
-  | 'support'
-  | 'security'
-  | 'features'
-  | 'infrastructure'
-  | 'audit'
-  | 'staff'
-  | 'analytics';
+export type { NavItemKey };
+
+const NAV_ICONS: Record<NavItemKey, React.ComponentType<{ className?: string }>> = {
+  overview: LayoutDashboard,
+  tenants: Building2,
+  security: ShieldCheck,
+  audit: FileText,
+  staff: UsersRound,
+  billing: Receipt,
+  support: LifeBuoy,
+  features: Sliders,
+  infrastructure: Server,
+  analytics: BarChart3,
+};
 
 interface SidebarProps {
-  currentTab: NavItemKey;
-  onSelectTab: (tab: NavItemKey) => void;
   onOpenImpersonation: () => void;
   isOpen?: boolean;
   onClose?: () => void;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
-  currentTab,
-  onSelectTab,
   onOpenImpersonation,
   isOpen = false,
   onClose,
 }) => {
   const { user, hasPermission } = useAuth();
-
-  const navItems = [
-    {
-      key: 'overview' as NavItemKey,
-      label: 'Dashboard',
-      icon: LayoutDashboard,
-      permission: PLATFORM_PERMISSIONS.OVERVIEW_READ,
-      badge: 'REAL',
-    },
-    {
-      key: 'tenants' as NavItemKey,
-      label: 'Tenants',
-      icon: Building2,
-      permission: PLATFORM_PERMISSIONS.TENANTS_READ,
-      badge: 'REAL',
-    },
-    {
-      key: 'security' as NavItemKey,
-      label: 'Security / SOC',
-      icon: ShieldCheck,
-      permission: PLATFORM_PERMISSIONS.SECURITY_READ,
-      badge: 'REAL',
-    },
-    {
-      key: 'audit' as NavItemKey,
-      label: 'Global Audit',
-      icon: FileText,
-      permission: PLATFORM_PERMISSIONS.AUDIT_READ,
-      badge: 'REAL',
-    },
-    {
-      key: 'staff' as NavItemKey,
-      label: 'Platform Staff & RBAC',
-      icon: UsersRound,
-      permission: PLATFORM_PERMISSIONS.STAFF_READ,
-      badge: 'REAL',
-    },
-    {
-      key: 'billing' as NavItemKey,
-      label: 'Billing & Plans',
-      icon: Receipt,
-      permission: PLATFORM_PERMISSIONS.BILLING_READ,
-      badge: 'PLANNED',
-      unimplemented: true,
-    },
-    {
-      key: 'support' as NavItemKey,
-      label: 'Platform Support',
-      icon: LifeBuoy,
-      permission: PLATFORM_PERMISSIONS.SUPPORT_READ,
-      badge: 'PLANNED',
-      unimplemented: true,
-    },
-    {
-      key: 'features' as NavItemKey,
-      label: 'Feature Toggles',
-      icon: Sliders,
-      permission: PLATFORM_PERMISSIONS.FEATURES_READ,
-      badge: 'PLANNED',
-      unimplemented: true,
-    },
-    {
-      key: 'infrastructure' as NavItemKey,
-      label: 'Infrastructure & Ops',
-      icon: Server,
-      permission: PLATFORM_PERMISSIONS.INFRASTRUCTURE_READ,
-      badge: 'PLANNED',
-      unimplemented: true,
-    },
-    {
-      key: 'analytics' as NavItemKey,
-      label: 'Platform Analytics',
-      icon: BarChart3,
-      permission: PLATFORM_PERMISSIONS.ANALYTICS_READ,
-      badge: 'PLANNED',
-      unimplemented: true,
-    },
-  ];
-
   const canImpersonate = hasPermission(PLATFORM_PERMISSIONS.IMPERSONATION_START);
-
-  const handleNavClick = (key: NavItemKey) => {
-    onSelectTab(key);
-    if (onClose) onClose();
-  };
 
   return (
     <>
@@ -144,7 +61,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       )}
 
       <aside
-        className={`fixed inset-y-0 left-0 z-40 w-68 bg-slate-900 text-slate-100 flex flex-col h-screen border-r border-slate-800 select-none shrink-0 transition-transform duration-200 ease-out lg:static lg:translate-x-0 ${
+        className={`fixed inset-y-0 left-0 z-40 w-68 max-w-[85vw] bg-slate-900 text-slate-100 flex flex-col h-dvh border-r border-slate-800 select-none shrink-0 transition-transform duration-200 ease-out lg:static lg:translate-x-0 ${
           isOpen ? 'translate-x-0 shadow-2xl' : '-translate-x-full'
         }`}
       >
@@ -155,7 +72,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <button
               type="button"
               onClick={onClose}
-              className="lg:hidden p-1.5 rounded-[10px] text-slate-400 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer"
+              className="lg:hidden min-w-[40px] min-h-[40px] flex items-center justify-center rounded-[10px] text-slate-400 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer"
               aria-label="Close navigation menu"
             >
               <X className="w-4 h-4" />
@@ -169,57 +86,66 @@ export const Sidebar: React.FC<SidebarProps> = ({
             Core Operations
           </div>
 
-          {navItems.map((item) => {
+          {PLATFORM_NAV_ROUTES.map((item) => {
             const hasAccess = hasPermission(item.permission);
-            const isActive = currentTab === item.key;
-            const Icon = item.icon;
+            const Icon = NAV_ICONS[item.key];
 
             if (!hasAccess) {
               return null;
             }
 
             return (
-              <button
+              <NavLink
                 key={item.key}
-                onClick={() => handleNavClick(item.key)}
-                className={`relative w-full flex items-center justify-between px-3 py-2.5 text-xs rounded-[12px] transition-all duration-150 text-left group cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-400 ${
-                  isActive
-                    ? 'bg-[#00695C] text-white font-semibold shadow-sm'
-                    : 'text-slate-300 hover:bg-slate-800/80 hover:text-white font-medium'
-                }`}
+                to={item.path}
+                end={item.path === '/overview'}
+                onClick={() => {
+                  if (onClose) onClose();
+                }}
+                className={({ isActive }) =>
+                  `relative w-full min-h-[44px] lg:min-h-0 flex items-center justify-between px-3 py-2.5 text-xs rounded-[12px] transition-all duration-150 text-left group cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-400 ${
+                    isActive
+                      ? 'bg-[#00695C] text-white font-semibold shadow-sm'
+                      : 'text-slate-300 hover:bg-slate-800/80 hover:text-white font-medium'
+                  }`
+                }
               >
-                {isActive && (
-                  <span
-                    className="absolute left-1 top-2 bottom-2 w-1 rounded-full bg-teal-300"
-                    aria-hidden="true"
-                  />
-                )}
+                {({ isActive }) => (
+                  <>
+                    {isActive && (
+                      <span
+                        className="absolute left-1 top-2 bottom-2 w-1 rounded-full bg-teal-300"
+                        aria-hidden="true"
+                      />
+                    )}
 
-                <div className={`flex items-center gap-2.5 truncate ${isActive ? 'pl-1.5' : ''}`}>
-                  <Icon
-                    className={`w-4 h-4 shrink-0 transition-colors ${
-                      isActive ? 'text-white' : 'text-slate-400 group-hover:text-teal-300'
-                    }`}
-                  />
-                  <span className="truncate">{item.label}</span>
-                </div>
+                    <div className={`flex items-center gap-2.5 truncate ${isActive ? 'pl-1.5' : ''}`}>
+                      <Icon
+                        className={`w-4 h-4 shrink-0 transition-colors ${
+                          isActive ? 'text-white' : 'text-slate-400 group-hover:text-teal-300'
+                        }`}
+                      />
+                      <span className="truncate">{item.title}</span>
+                    </div>
 
-                {item.badge && (
-                  <span
-                    className={`text-[9px] font-mono px-1.5 py-0.5 rounded-[6px] font-bold uppercase tracking-wider shrink-0 ${
-                      item.badge === 'REAL'
-                        ? isActive
-                          ? 'bg-white/15 text-white border border-white/25'
-                          : 'bg-teal-500/15 text-teal-300 border border-teal-500/25'
-                        : isActive
-                        ? 'bg-white/15 text-slate-100 border border-white/20'
-                        : 'bg-slate-800 text-slate-400 border border-slate-700'
-                    }`}
-                  >
-                    {item.badge}
-                  </span>
+                    {item.badge && (
+                      <span
+                        className={`text-[9px] font-mono px-1.5 py-0.5 rounded-[6px] font-bold uppercase tracking-wider shrink-0 ${
+                          item.badge === 'REAL'
+                            ? isActive
+                              ? 'bg-white/15 text-white border border-white/25'
+                              : 'bg-teal-500/15 text-teal-300 border border-teal-500/25'
+                            : isActive
+                            ? 'bg-white/15 text-slate-100 border border-white/20'
+                            : 'bg-slate-800 text-slate-400 border border-slate-700'
+                        }`}
+                      >
+                        {item.badge}
+                      </span>
+                    )}
+                  </>
                 )}
-              </button>
+              </NavLink>
             );
           })}
 

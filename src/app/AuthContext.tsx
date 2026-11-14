@@ -16,12 +16,27 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [user, setUser] = useState<PlatformUser | null>(null);
-  const [loading, setLoading] = useState(true);
+export const AuthProvider: React.FC<{
+  children: React.ReactNode;
+  initialUser?: PlatformUser | null;
+}> = ({ children, initialUser }) => {
+  const hasExplicitInitial = initialUser !== undefined;
+  const [user, setUser] = useState<PlatformUser | null>(hasExplicitInitial ? initialUser : null);
+  const [loading, setLoading] = useState(!hasExplicitInitial);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    if (hasExplicitInitial) return;
+    api.setUnauthorizedHandler(() => {
+      setUser(null);
+    });
+    return () => {
+      api.setUnauthorizedHandler(null);
+    };
+  }, [hasExplicitInitial]);
+
+  useEffect(() => {
+    if (hasExplicitInitial) return;
     async function loadCurrentSession() {
       try {
         const u = await api.getCurrentUser();
@@ -44,7 +59,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
     }
     loadCurrentSession();
-  }, []);
+  }, [hasExplicitInitial]);
 
   const login = async (email: string, password: string): Promise<LoginResponse> => {
     setError(null);
@@ -102,7 +117,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const hasPermission = (permissionCode: string): boolean => {
-    if (!user) return false;
+    if (!user || !Array.isArray(user.permissions)) return false;
     return user.permissions.includes(permissionCode);
   };
 

@@ -55,7 +55,7 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
         className={`${baseStyles} ${variants[variant]} ${sizes[size]} ${className}`}
         {...props}
       >
-        <span className="relative z-10 inline-flex items-center justify-center gap-1.5">
+        <span className="relative z-10 inline-flex items-center justify-center gap-2 whitespace-nowrap">
           {loading ? (
             <svg
               className="animate-spin w-3.5 h-3.5 shrink-0"
@@ -78,9 +78,11 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
               />
             </svg>
           ) : (
-            icon && <span className="shrink-0 flex items-center">{icon}</span>
+            icon && <span className="shrink-0 inline-flex items-center">{icon}</span>
           )}
-          <span>{children}</span>
+          <span className="inline-flex items-center justify-center gap-2 whitespace-nowrap">
+            {children}
+          </span>
         </span>
       </button>
     );

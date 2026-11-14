@@ -1,7 +1,25 @@
-import { PlatformUser, OverviewData, Tenant, AuditRecord, SecurityEventItem, HealthCheckData, LoginResponse, MfaEnrollResponse } from './types.ts';
+import {
+  PlatformUser,
+  OverviewData,
+  Tenant,
+  AuditLogQueryParams,
+  AuditLogResponse,
+  SecurityEventItem,
+  HealthCheckData,
+  LoginResponse,
+  MfaEnrollResponse,
+  PrivacyPolicyDocument,
+  CompliancePostureData,
+  ComplianceGovernanceRecord,
+} from './types.ts';
 
 export class ApiClient {
   private refreshPromise: Promise<boolean> | null = null;
+  private onUnauthorizedSession: (() => void) | null = null;
+
+  setUnauthorizedHandler(handler: (() => void) | null): void {
+    this.onUnauthorizedSession = handler;
+  }
 
   private async request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
     const headers: Record<string, string> = {
@@ -16,14 +34,14 @@ export class ApiClient {
       headers,
     });
 
-    // Transparent single refresh retry on 401 for authenticated requests
-    if (
-      response.status === 401 &&
+    const isProtectedSessionEndpoint =
       endpoint !== '/api/auth/login' &&
       endpoint !== '/api/auth/refresh' &&
       endpoint !== '/api/auth/logout' &&
-      !endpoint.startsWith('/api/auth/mfa/')
-    ) {
+      !endpoint.startsWith('/api/auth/mfa/');
+
+    // Transparent single refresh retry on 401 for authenticated requests
+    if (response.status === 401 && isProtectedSessionEndpoint) {
       const refreshed = await this.refreshToken();
       if (refreshed) {
         response = await fetch(endpoint, {
@@ -31,6 +49,9 @@ export class ApiClient {
           ...options,
           headers,
         });
+      }
+      if (response.status === 401 && this.onUnauthorizedSession) {
+        this.onUnauthorizedSession();
       }
     }
 
@@ -188,20 +209,51 @@ export class ApiClient {
   }
 
   // Audit
-  async getAuditLogs(params?: { search?: string; targetType?: string }): Promise<{
-    databaseConfigured: boolean;
-    items: AuditRecord[];
-    total: number;
-    message?: string;
-  }> {
+  async getAuditLogs(params?: AuditLogQueryParams): Promise<AuditLogResponse> {
     const query = new URLSearchParams();
     if (params?.search) query.set('search', params.search);
-    if (params?.targetType) query.set('targetType', params.targetType);
+    if (params?.targetType && params.targetType !== 'all') query.set('targetType', params.targetType);
+    if (params?.result && params.result !== 'all') query.set('result', params.result);
+    if (params?.startDate) query.set('startDate', params.startDate);
+    if (params?.endDate) query.set('endDate', params.endDate);
+    if (params?.page) query.set('page', String(params.page));
+    if (params?.pageSize) query.set('pageSize', String(params.pageSize));
     const qs = query.toString() ? `?${query.toString()}` : '';
-    return this.request(`/api/platform/audit${qs}`);
+    return this.request<AuditLogResponse>(`/api/platform/audit${qs}`);
   }
 
-  // Security
+  async getAuditExportUrl(params?: AuditLogQueryParams, format: 'json' | 'csv' = 'json'): Promise<string> {
+    const query = new URLSearchParams();
+    query.set('format', format);
+    if (params?.search) query.set('search', params.search);
+    if (params?.targetType && params.targetType !== 'all') query.set('targetType', params.targetType);
+    if (params?.result && params.result !== 'all') query.set('result', params.result);
+    if (params?.startDate) query.set('startDate', params.startDate);
+    if (params?.endDate) query.set('endDate', params.endDate);
+    return `/api/platform/audit/export?${query.toString()}`;
+  }
+
+  async downloadAuditExport(params?: AuditLogQueryParams, format: 'json' | 'csv' = 'json'): Promise<{ blob: Blob; filename: string }> {
+    const url = await this.getAuditExportUrl(params, format);
+    const response = await fetch(url, {
+      credentials: 'same-origin',
+      headers: {
+        'X-Requested-With': 'XMLHttpRequest',
+      },
+    });
+    if (!response.ok) {
+      const data = await response.json().catch(() => null);
+      throw new Error(data?.message || `Audit export failed with status ${response.status}`);
+    }
+    const blob = await response.blob();
+    const dateSlug = new Date().toISOString().slice(0, 10);
+    return {
+      blob,
+      filename: `dialpulse-audit-archive-${dateSlug}.${format}`,
+    };
+  }
+
+  // Security & Indian IT Act Compliance
   async getSecurityEvents(): Promise<{ databaseConfigured: boolean; items: SecurityEventItem[]; total: number }> {
     return this.request('/api/platform/security/events');
   }
@@ -209,6 +261,46 @@ export class ApiClient {
   async resolveSecurityEvent(id: string): Promise<{ success: boolean; message: string }> {
     return this.request(`/api/platform/security/events/${encodeURIComponent(id)}/resolve`, {
       method: 'POST',
+    });
+  }
+
+  async getCompliancePosture(): Promise<CompliancePostureData> {
+    return this.request<CompliancePostureData>('/api/platform/security/compliance');
+  }
+
+  async submitCertInReport(
+    eventId: string,
+    payload: { certInTicketId: string; incidentCategory: string; summary: string }
+  ): Promise<{ success: boolean; record: ComplianceGovernanceRecord; message: string }> {
+    return this.request(`/api/platform/security/events/${encodeURIComponent(eventId)}/certin-report`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async logLawfulRequest(payload: {
+    section: 'section_69' | 'section_72';
+    authorityName: string;
+    orderReference: string;
+    targetTenantId: string;
+    justification: string;
+  }): Promise<{ success: boolean; record: ComplianceGovernanceRecord; message: string }> {
+    return this.request('/api/platform/security/compliance/lawful-request', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async logComplianceReview(payload: {
+    category: 'it_act_training' | 'quarterly_review' | 'vapt_assessment';
+    title: string;
+    subjectEmail: string;
+    outcome: 'completed' | 'passed' | 'action_required';
+    notes: string;
+  }): Promise<{ success: boolean; record: ComplianceGovernanceRecord; message: string }> {
+    return this.request('/api/platform/security/compliance/reviews', {
+      method: 'POST',
+      body: JSON.stringify(payload),
     });
   }
 
@@ -229,7 +321,11 @@ export class ApiClient {
     });
   }
 
-  // System
+  // System & Public Policy
+  async getPrivacyPolicy(): Promise<{ policy: PrivacyPolicyDocument; timestamp: string }> {
+    return this.request('/api/platform/system/privacy-policy');
+  }
+
   async getHealth(): Promise<HealthCheckData> {
     return this.request('/api/platform/system/health');
   }

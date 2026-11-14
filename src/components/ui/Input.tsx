@@ -14,7 +14,7 @@ export const Input = React.forwardRef<HTMLInputElement, InputProps>(
     const inputId = id || (label ? label.toLowerCase().replace(/\s+/g, '-') : undefined);
 
     return (
-      <div className="w-full space-y-1.5">
+      <div className="w-full space-y-1">
         {label && (
           <label
             htmlFor={inputId}
@@ -35,7 +35,7 @@ export const Input = React.forwardRef<HTMLInputElement, InputProps>(
           <input
             id={inputId}
             ref={ref}
-            className={`w-full bg-slate-50 text-slate-900 placeholder:text-slate-400 border rounded-[12px] px-3.5 py-2.5 text-xs transition-all duration-200 focus:outline-none focus:bg-white ${
+            className={`w-full min-h-[42px] sm:min-h-[38px] bg-slate-50 text-slate-900 placeholder:text-slate-400 border rounded-[12px] px-3.5 py-2 text-sm sm:text-xs transition-all duration-200 focus:outline-none focus:bg-white ${
               error
                 ? 'border-[#BA1A1A] focus:border-[#BA1A1A] focus:ring-2 focus:ring-[#BA1A1A]/15'
                 : 'border-slate-200 focus:border-[#00695C] focus:ring-2 focus:ring-[#00695C]/15'

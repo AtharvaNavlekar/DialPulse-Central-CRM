@@ -23,6 +23,7 @@ if (process.env.NODE_ENV !== 'production') {
 import { getValidatedConfig } from './src/server/config/env.ts';
 import { requestContextMiddleware } from './src/server/middleware/request-context.ts';
 import { csrfProtectionMiddleware } from './src/server/middleware/csrf.ts';
+import { securityHeadersMiddleware } from './src/server/middleware/security-headers.ts';
 
 import authRouter from './src/server/routes/auth.ts';
 import overviewRouter from './src/server/routes/overview.ts';
@@ -39,10 +40,12 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
+app.set('trust proxy', 1);
 const PORT = config.PORT;
 const isProd = config.NODE_ENV === 'production';
 
 // Core Express middlewares
+app.use(securityHeadersMiddleware);
 app.use(express.json({ limit: '2mb' }));
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
@@ -95,7 +98,10 @@ async function startServer() {
   } else {
     const distPath = path.resolve(__dirname, 'dist');
     app.use(express.static(distPath));
-    app.get('*', (_req, res) => {
+    app.get('*', (req, res, next) => {
+      if (req.path === '/api' || req.path.startsWith('/api/')) {
+        return next();
+      }
       res.sendFile(path.resolve(distPath, 'index.html'));
     });
   }

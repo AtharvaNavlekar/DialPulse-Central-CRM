@@ -374,8 +374,8 @@ router.post('/login', async (req: ExtendedRequest, res: Response) => {
   });
 
   // Set HTTP-only cookies with secure attributes
-  res.cookie(COOKIE_NAMES.ACCESS_TOKEN, accessToken, getAccessTokenCookieOptions());
-  res.cookie(COOKIE_NAMES.REFRESH_TOKEN, refreshToken, getRefreshTokenCookieOptions());
+  res.cookie(COOKIE_NAMES.ACCESS_TOKEN, accessToken, getAccessTokenCookieOptions(req));
+  res.cookie(COOKIE_NAMES.REFRESH_TOKEN, refreshToken, getRefreshTokenCookieOptions(req));
 
   await AuditService.record({
     actor: {
@@ -479,8 +479,8 @@ router.post('/refresh', async (req: ExtendedRequest, res: Response) => {
 
       // If the session was explicitly revoked, reject immediately
       if (reusedSession.isRevoked) {
-        res.clearCookie(COOKIE_NAMES.ACCESS_TOKEN, getClearCookieOptions());
-        res.clearCookie(COOKIE_NAMES.REFRESH_TOKEN, getClearCookieOptions());
+        res.clearCookie(COOKIE_NAMES.ACCESS_TOKEN, getClearCookieOptions(req));
+        res.clearCookie(COOKIE_NAMES.REFRESH_TOKEN, getClearCookieOptions(req));
         return res.status(401).json({
           error: 'SESSION_REVOKED',
           message: 'Platform session has been revoked. Please log in again.',
@@ -492,8 +492,8 @@ router.post('/refresh', async (req: ExtendedRequest, res: Response) => {
         if (store.revokeSession) {
           await store.revokeSession(reusedSession.id);
         }
-        res.clearCookie(COOKIE_NAMES.ACCESS_TOKEN, getClearCookieOptions());
-        res.clearCookie(COOKIE_NAMES.REFRESH_TOKEN, getClearCookieOptions());
+        res.clearCookie(COOKIE_NAMES.ACCESS_TOKEN, getClearCookieOptions(req));
+        res.clearCookie(COOKIE_NAMES.REFRESH_TOKEN, getClearCookieOptions(req));
         return res.status(401).json({
           error: 'SESSION_EXPIRED',
           message: 'Platform session has expired. Please log in again.',
@@ -515,8 +515,8 @@ router.post('/refresh', async (req: ExtendedRequest, res: Response) => {
       if (store.revokeSession) {
         await store.revokeSession(reusedSession.id);
       }
-      res.clearCookie(COOKIE_NAMES.ACCESS_TOKEN, getClearCookieOptions());
-      res.clearCookie(COOKIE_NAMES.REFRESH_TOKEN, getClearCookieOptions());
+      res.clearCookie(COOKIE_NAMES.ACCESS_TOKEN, getClearCookieOptions(req));
+      res.clearCookie(COOKIE_NAMES.REFRESH_TOKEN, getClearCookieOptions(req));
 
       await AuditService.record({
         action: 'session_reuse_detected',
@@ -541,8 +541,8 @@ router.post('/refresh', async (req: ExtendedRequest, res: Response) => {
     }
 
     if (!session) {
-      res.clearCookie(COOKIE_NAMES.ACCESS_TOKEN, getClearCookieOptions());
-      res.clearCookie(COOKIE_NAMES.REFRESH_TOKEN, getClearCookieOptions());
+      res.clearCookie(COOKIE_NAMES.ACCESS_TOKEN, getClearCookieOptions(req));
+      res.clearCookie(COOKIE_NAMES.REFRESH_TOKEN, getClearCookieOptions(req));
       return res.status(401).json({
         error: 'INVALID_REFRESH_TOKEN',
         message: 'Invalid platform refresh token.',
@@ -551,8 +551,8 @@ router.post('/refresh', async (req: ExtendedRequest, res: Response) => {
 
     // 3. Verify session is not revoked
     if (session.isRevoked) {
-      res.clearCookie(COOKIE_NAMES.ACCESS_TOKEN, getClearCookieOptions());
-      res.clearCookie(COOKIE_NAMES.REFRESH_TOKEN, getClearCookieOptions());
+      res.clearCookie(COOKIE_NAMES.ACCESS_TOKEN, getClearCookieOptions(req));
+      res.clearCookie(COOKIE_NAMES.REFRESH_TOKEN, getClearCookieOptions(req));
       return res.status(401).json({
         error: 'SESSION_REVOKED',
         message: 'Platform session has been revoked. Please log in again.',
@@ -565,8 +565,8 @@ router.post('/refresh', async (req: ExtendedRequest, res: Response) => {
       if (store.revokeSession) {
         await store.revokeSession(session.id);
       }
-      res.clearCookie(COOKIE_NAMES.ACCESS_TOKEN, getClearCookieOptions());
-      res.clearCookie(COOKIE_NAMES.REFRESH_TOKEN, getClearCookieOptions());
+      res.clearCookie(COOKIE_NAMES.ACCESS_TOKEN, getClearCookieOptions(req));
+      res.clearCookie(COOKIE_NAMES.REFRESH_TOKEN, getClearCookieOptions(req));
       return res.status(401).json({
         error: 'SESSION_EXPIRED',
         message: 'Platform session has expired. Please log in again.',
@@ -579,8 +579,8 @@ router.post('/refresh', async (req: ExtendedRequest, res: Response) => {
       if (store.revokeSession) {
         await store.revokeSession(session.id);
       }
-      res.clearCookie(COOKIE_NAMES.ACCESS_TOKEN, getClearCookieOptions());
-      res.clearCookie(COOKIE_NAMES.REFRESH_TOKEN, getClearCookieOptions());
+      res.clearCookie(COOKIE_NAMES.ACCESS_TOKEN, getClearCookieOptions(req));
+      res.clearCookie(COOKIE_NAMES.REFRESH_TOKEN, getClearCookieOptions(req));
       return res.status(403).json({
         error: 'ACCOUNT_DISABLED',
         message: 'Platform staff account is deactivated or not privileged in database.',
@@ -591,8 +591,8 @@ router.post('/refresh', async (req: ExtendedRequest, res: Response) => {
     const { token: newRefreshToken, hash: newRefreshHash, expiresAt: newRefreshExpiresAt } = generateRefreshToken();
 
     if (!store.rotateSessionRefreshToken) {
-      res.clearCookie(COOKIE_NAMES.ACCESS_TOKEN, getClearCookieOptions());
-      res.clearCookie(COOKIE_NAMES.REFRESH_TOKEN, getClearCookieOptions());
+      res.clearCookie(COOKIE_NAMES.ACCESS_TOKEN, getClearCookieOptions(req));
+      res.clearCookie(COOKIE_NAMES.REFRESH_TOKEN, getClearCookieOptions(req));
       return res.status(503).json({
         error: 'ROTATION_UNSUPPORTED',
         message: 'Authoritative platform data store does not support atomic session rotation.',
@@ -628,8 +628,8 @@ router.post('/refresh', async (req: ExtendedRequest, res: Response) => {
         const now = Date.now();
 
         if (confSession.isRevoked) {
-          res.clearCookie(COOKIE_NAMES.ACCESS_TOKEN, getClearCookieOptions());
-          res.clearCookie(COOKIE_NAMES.REFRESH_TOKEN, getClearCookieOptions());
+          res.clearCookie(COOKIE_NAMES.ACCESS_TOKEN, getClearCookieOptions(req));
+          res.clearCookie(COOKIE_NAMES.REFRESH_TOKEN, getClearCookieOptions(req));
           return res.status(401).json({
             error: 'SESSION_REVOKED',
             message: 'Platform session has been revoked. Please log in again.',
@@ -640,8 +640,8 @@ router.post('/refresh', async (req: ExtendedRequest, res: Response) => {
           if (store.revokeSession) {
             await store.revokeSession(confSession.id);
           }
-          res.clearCookie(COOKIE_NAMES.ACCESS_TOKEN, getClearCookieOptions());
-          res.clearCookie(COOKIE_NAMES.REFRESH_TOKEN, getClearCookieOptions());
+          res.clearCookie(COOKIE_NAMES.ACCESS_TOKEN, getClearCookieOptions(req));
+          res.clearCookie(COOKIE_NAMES.REFRESH_TOKEN, getClearCookieOptions(req));
           return res.status(401).json({
             error: 'SESSION_EXPIRED',
             message: 'Platform session has expired. Please log in again.',
@@ -662,8 +662,8 @@ router.post('/refresh', async (req: ExtendedRequest, res: Response) => {
         if (store.revokeSession) {
           await store.revokeSession(confSession.id);
         }
-        res.clearCookie(COOKIE_NAMES.ACCESS_TOKEN, getClearCookieOptions());
-        res.clearCookie(COOKIE_NAMES.REFRESH_TOKEN, getClearCookieOptions());
+        res.clearCookie(COOKIE_NAMES.ACCESS_TOKEN, getClearCookieOptions(req));
+        res.clearCookie(COOKIE_NAMES.REFRESH_TOKEN, getClearCookieOptions(req));
 
         await AuditService.record({
           action: 'session_reuse_detected',
@@ -681,8 +681,8 @@ router.post('/refresh', async (req: ExtendedRequest, res: Response) => {
         });
       }
 
-      res.clearCookie(COOKIE_NAMES.ACCESS_TOKEN, getClearCookieOptions());
-      res.clearCookie(COOKIE_NAMES.REFRESH_TOKEN, getClearCookieOptions());
+      res.clearCookie(COOKIE_NAMES.ACCESS_TOKEN, getClearCookieOptions(req));
+      res.clearCookie(COOKIE_NAMES.REFRESH_TOKEN, getClearCookieOptions(req));
       return res.status(401).json({
         error: 'CONCURRENT_ROTATION_CONFLICT',
         message: 'Platform session rotation conflict or session state changed. Please authenticate again.',
@@ -699,8 +699,8 @@ router.post('/refresh', async (req: ExtendedRequest, res: Response) => {
     });
 
     // 8. Set HTTP-only cookies with required security attributes
-    res.cookie(COOKIE_NAMES.ACCESS_TOKEN, newAccessToken, getAccessTokenCookieOptions());
-    res.cookie(COOKIE_NAMES.REFRESH_TOKEN, newRefreshToken, getRefreshTokenCookieOptions());
+    res.cookie(COOKIE_NAMES.ACCESS_TOKEN, newAccessToken, getAccessTokenCookieOptions(req));
+    res.cookie(COOKIE_NAMES.REFRESH_TOKEN, newRefreshToken, getRefreshTokenCookieOptions(req));
 
     await AuditService.record({
       actor: {
@@ -836,8 +836,8 @@ router.post('/logout', async (req: ExtendedRequest, res: Response) => {
   }
 
   // 4. Consistently clear cookies with exact same options
-  res.clearCookie(COOKIE_NAMES.ACCESS_TOKEN, getClearCookieOptions());
-  res.clearCookie(COOKIE_NAMES.REFRESH_TOKEN, getClearCookieOptions());
+  res.clearCookie(COOKIE_NAMES.ACCESS_TOKEN, getClearCookieOptions(req));
+  res.clearCookie(COOKIE_NAMES.REFRESH_TOKEN, getClearCookieOptions(req));
 
   return res.json({ success: true, message: 'Logged out successfully. Platform session revoked.' });
 });
@@ -1044,8 +1044,8 @@ router.post('/mfa/challenge', async (req: ExtendedRequest, res: Response) => {
     stepUpCompletedAt: now.toISOString(),
   });
 
-  res.cookie(COOKIE_NAMES.ACCESS_TOKEN, accessToken, getAccessTokenCookieOptions());
-  res.cookie(COOKIE_NAMES.REFRESH_TOKEN, refreshToken, getRefreshTokenCookieOptions());
+  res.cookie(COOKIE_NAMES.ACCESS_TOKEN, accessToken, getAccessTokenCookieOptions(req));
+  res.cookie(COOKIE_NAMES.REFRESH_TOKEN, refreshToken, getRefreshTokenCookieOptions(req));
 
   await AuditService.record({
     actor: {
@@ -1070,6 +1070,7 @@ router.post('/mfa/challenge', async (req: ExtendedRequest, res: Response) => {
       fullName: user.fullName,
       platformRole: user.platformRole,
       isPlatformStaff: true,
+      permissions: getPermissionsForRole(user.platformRole as PlatformRole),
       mfaVerified: true,
       stepUpCompletedAt: now.toISOString(),
     },
@@ -1207,8 +1208,8 @@ router.post('/mfa/recovery', async (req: ExtendedRequest, res: Response) => {
     stepUpCompletedAt: now.toISOString(),
   });
 
-  res.cookie(COOKIE_NAMES.ACCESS_TOKEN, accessToken, getAccessTokenCookieOptions());
-  res.cookie(COOKIE_NAMES.REFRESH_TOKEN, refreshToken, getRefreshTokenCookieOptions());
+  res.cookie(COOKIE_NAMES.ACCESS_TOKEN, accessToken, getAccessTokenCookieOptions(req));
+  res.cookie(COOKIE_NAMES.REFRESH_TOKEN, refreshToken, getRefreshTokenCookieOptions(req));
 
   await AuditService.record({
     actor: {
@@ -1233,6 +1234,7 @@ router.post('/mfa/recovery', async (req: ExtendedRequest, res: Response) => {
       fullName: user.fullName,
       platformRole: user.platformRole,
       isPlatformStaff: true,
+      permissions: getPermissionsForRole(user.platformRole as PlatformRole),
       mfaVerified: true,
       stepUpCompletedAt: now.toISOString(),
     },

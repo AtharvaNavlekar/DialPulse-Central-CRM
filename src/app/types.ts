@@ -76,6 +76,15 @@ export interface AuditRecord {
   createdAt: string;
 }
 
+export interface CertInSlaInfo {
+  windowHours: number;
+  deadlineAt: string;
+  remainingMs: number;
+  isOverdue: boolean;
+  status: 'resolved' | 'within_sla' | 'approaching_deadline' | 'overdue';
+  remainingLabel: string;
+}
+
 export interface SecurityEventItem {
   id: string;
   eventType: string;
@@ -88,6 +97,89 @@ export interface SecurityEventItem {
   resolvedBy?: string | null;
   resolvedAt?: string | null;
   createdAt: string;
+  certInSla?: CertInSlaInfo;
+}
+
+export interface PrivacyPolicySection {
+  id: string;
+  heading: string;
+  legalBasis: string;
+  summary: string;
+  points: string[];
+}
+
+export interface PrivacyPolicyDocument {
+  title: string;
+  version: string;
+  effectiveDate: string;
+  jurisdiction: string;
+  dataResidency: string;
+  retentionMinimumDays: number;
+  incidentReportingWindowHours: number;
+  grievanceOfficer: {
+    name: string;
+    designation: string;
+    email: string;
+    address: string;
+    acknowledgmentSlaHours: number;
+    resolutionSlaDays: number;
+  };
+  sections: PrivacyPolicySection[];
+}
+
+export interface ComplianceGovernanceRecord {
+  id: string;
+  action: string;
+  actorEmail: string;
+  targetId: string | null;
+  createdAt: string;
+  details: Record<string, any>;
+}
+
+export interface CompliancePostureData {
+  databaseConfigured: boolean;
+  assessedAt: string;
+  jurisdiction: string;
+  dataResidency: string;
+  clockSync: {
+    utcTimestamp: string;
+    istFormatted: string;
+    clockHealthy: boolean;
+    note: string;
+  };
+  retentionPolicy: {
+    minimumDays: number;
+    oldestRecordAt: string | null;
+    totalAuditRecordsObserved: number;
+    exportFormats: string[];
+  };
+  certInReadiness: {
+    reportingWindowHours: number;
+    unresolvedCount: number;
+    overdueCount: number;
+    approachingDeadlineCount: number;
+    reportsSubmittedCount: number;
+    recentReports: ComplianceGovernanceRecord[];
+  };
+  technicalControls: {
+    mfaTotalStaff: number;
+    mfaEnrolledCount: number;
+    mfaCoveragePercent: number;
+    encryptionAtRest: string;
+    encryptionInTransit: string;
+    securityHeaders: string[];
+    csrfProtection: string;
+    stepUpFreshnessMinutes: number;
+  };
+  itActSections: Array<{
+    section: string;
+    controlTitle: string;
+    status: 'enforced' | 'partial' | 'attention_required';
+    evidence: string;
+    gapNote: string | null;
+  }>;
+  lawfulRequests: ComplianceGovernanceRecord[];
+  complianceReviews: ComplianceGovernanceRecord[];
 }
 
 export interface SubsystemHealthItem {
@@ -107,6 +199,26 @@ export interface ActiveUsersStats {
   activeStaffSessions: number;
   totalMaxCapacity: number | null;
   utilizationPercent: number | null;
+  message?: string;
+}
+
+export interface AuditLogQueryParams {
+  search?: string;
+  targetType?: string;
+  result?: string;
+  startDate?: string;
+  endDate?: string;
+  page?: number;
+  pageSize?: number;
+}
+
+export interface AuditLogResponse {
+  databaseConfigured: boolean;
+  items: AuditRecord[];
+  page: number;
+  pageSize: number;
+  total: number;
+  totalPages: number;
   message?: string;
 }
 
@@ -133,7 +245,7 @@ export interface OverviewData {
   subsystems?: SubsystemHealthItem[];
   recentErrors?: SecurityEventItem[];
   tenants: {
-    status: 'available' | 'awaiting_database';
+    status: 'available' | 'awaiting_database' | 'restricted';
     total: number | null;
     active: number | null;
     suspended: number | null;
@@ -142,14 +254,14 @@ export interface OverviewData {
     message?: string;
   };
   security: {
-    status: 'available' | 'awaiting_database';
+    status: 'available' | 'awaiting_database' | 'restricted';
     unresolvedCount: number | null;
     criticalCount?: number | null;
     recentEvents: SecurityEventItem[];
     message?: string;
   };
   audit: {
-    status: 'available' | 'awaiting_database';
+    status: 'available' | 'awaiting_database' | 'restricted';
     recentEvents: AuditRecord[];
     message?: string;
   };

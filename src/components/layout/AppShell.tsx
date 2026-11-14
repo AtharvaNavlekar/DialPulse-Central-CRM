@@ -1,12 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Sidebar, NavItemKey } from './Sidebar.tsx';
+import { Outlet } from 'react-router-dom';
+import { Sidebar } from './Sidebar.tsx';
 import { TopBar } from './TopBar.tsx';
-import { OverviewView } from '../../features/overview/OverviewView.tsx';
-import { TenantListView } from '../../features/tenants/TenantListView.tsx';
-import { AuditListView } from '../../features/audit/AuditListView.tsx';
-import { SecurityView } from '../../features/security/SecurityView.tsx';
-import { RbacMatrixView } from '../../features/rbac/RbacMatrixView.tsx';
-import { ModulePlaceholder } from '../../features/unimplemented/ModulePlaceholder.tsx';
 import { ImpersonationModal } from '../../features/impersonation/ImpersonationView.tsx';
 import { DbInfoModal } from '../common/DbInfoModal.tsx';
 import { MfaEnrollmentModal } from '../auth/MfaEnrollmentModal.tsx';
@@ -14,9 +9,12 @@ import { api } from '../../app/api.ts';
 import { useAuth } from '../../app/AuthContext.tsx';
 import { HealthCheckData } from '../../app/types.ts';
 
+export interface AppShellOutletContext {
+  openDbModal: () => void;
+}
+
 export const AppShell: React.FC = () => {
   const { refreshUser } = useAuth();
-  const [currentTab, setCurrentTab] = useState<NavItemKey>('overview');
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [impersonationOpen, setImpersonationOpen] = useState(false);
   const [dbModalOpen, setDbModalOpen] = useState(false);
@@ -38,54 +36,21 @@ export const AppShell: React.FC = () => {
     return () => clearInterval(interval);
   }, []);
 
-  const renderCurrentView = () => {
-    switch (currentTab) {
-      case 'overview':
-        return (
-          <OverviewView
-            onNavigateToTenants={() => setCurrentTab('tenants')}
-            onNavigateToAudit={() => setCurrentTab('audit')}
-            onNavigateToSecurity={() => setCurrentTab('security')}
-            onOpenDbModal={() => setDbModalOpen(true)}
-          />
-        );
-      case 'tenants':
-        return <TenantListView />;
-      case 'security':
-        return <SecurityView />;
-      case 'audit':
-        return <AuditListView />;
-      case 'staff':
-        return <RbacMatrixView />;
-      case 'billing':
-      case 'support':
-      case 'features':
-      case 'infrastructure':
-      case 'analytics':
-        return (
-          <ModulePlaceholder
-            moduleKey={currentTab}
-            onBackToOverview={() => setCurrentTab('overview')}
-          />
-        );
-      default:
-        return (
-          <OverviewView
-            onNavigateToTenants={() => setCurrentTab('tenants')}
-            onNavigateToAudit={() => setCurrentTab('audit')}
-            onNavigateToSecurity={() => setCurrentTab('security')}
-            onOpenDbModal={() => setDbModalOpen(true)}
-          />
-        );
-    }
-  };
+  useEffect(() => {
+    if (!mobileMenuOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setMobileMenuOpen(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [mobileMenuOpen]);
 
   return (
-    <div className="flex h-screen bg-[#F8FAF9] overflow-hidden text-slate-900">
+    <div className="flex h-dvh bg-[#F8FAF9] overflow-hidden text-slate-900">
       {/* Sidebar Navigation */}
       <Sidebar
-        currentTab={currentTab}
-        onSelectTab={(tab) => setCurrentTab(tab)}
         onOpenImpersonation={() => setImpersonationOpen(true)}
         isOpen={mobileMenuOpen}
         onClose={() => setMobileMenuOpen(false)}
@@ -94,17 +59,15 @@ export const AppShell: React.FC = () => {
       {/* Main Content Workspace */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         <TopBar
-          currentTabName={currentTab}
           isDbConnected={healthData?.database?.reachable ?? false}
           dbLatencyMs={healthData?.database?.latencyMs}
           onOpenDbDetails={() => setDbModalOpen(true)}
           onOpenMobileMenu={() => setMobileMenuOpen(true)}
           onOpenMfaSetup={() => setMfaEnrollOpen(true)}
-          onNavigateToSecurity={() => setCurrentTab('security')}
         />
 
         <main className="flex-1 overflow-y-auto bg-[#F8FAF9]">
-          {renderCurrentView()}
+          <Outlet context={{ openDbModal: () => setDbModalOpen(true) } satisfies AppShellOutletContext} />
         </main>
       </div>
 

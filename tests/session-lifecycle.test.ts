@@ -1594,6 +1594,84 @@ export async function runSessionLifecycleTests() {
       assert.strictEqual(incompatibilityCaught, true, 'Schema incompatibility must abort adoption safely');
       console.log('  ✓ Criterion 21: Database migration works for fresh DB, existing-schema adoption, idempotency, and halts on incompatible schema');
     }
+
+    // -------------------------------------------------------------------------
+    // Criterion 22: HTTPS proxy / cross-site iframe cookie attributes & overview round-trip
+    // -------------------------------------------------------------------------
+    {
+      process.env.NODE_ENV = 'development';
+      delete process.env.DATABASE_URL;
+      const testAdminSecret = 'iframe-cookie-secret-777!';
+      process.env.DEV_ADMIN_PASSWORD = testAdminSecret;
+
+      const { default: overviewRouter } = await import('../src/server/routes/overview.ts');
+      const { app, server } = createLifecycleTestServer();
+      app.set('trust proxy', 1);
+      app.use('/api/platform/overview', overviewRouter);
+      await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', () => resolve()));
+
+      try {
+        // 22a. Behind an HTTPS reverse proxy (e.g. AI Studio preview iframe), cookies MUST be Secure + SameSite=None
+        const addr = server.address() as any;
+        const proxyOrigin = `https://ais-dev-preview.example.run.app`;
+        const loginRes = await makeRequest(
+          server,
+          '/api/auth/login',
+          'POST',
+          {
+            host: 'ais-dev-preview.example.run.app',
+            origin: proxyOrigin,
+            'x-forwarded-proto': 'https',
+          },
+          {
+            email: 'admin@dialpulse.internal',
+            password: testAdminSecret,
+          }
+        );
+
+        assert.strictEqual(loginRes.status, 200, 'HTTPS proxy login must succeed');
+        const accessCookie = loginRes.cookies[COOKIE_NAMES.ACCESS_TOKEN];
+        const refreshCookie = loginRes.cookies[COOKIE_NAMES.REFRESH_TOKEN];
+        assert(accessCookie && refreshCookie, 'Both auth cookies must be issued');
+        assert.strictEqual(accessCookie.attributes.httponly, true);
+        assert.strictEqual(accessCookie.attributes.secure, true, 'HTTPS proxy access cookie must be Secure even in development');
+        assert.strictEqual(String(accessCookie.attributes.samesite).toLowerCase(), 'none', 'HTTPS proxy access cookie must use SameSite=None for iframe persistence');
+        assert.strictEqual(refreshCookie.attributes.secure, true, 'HTTPS proxy refresh cookie must be Secure even in development');
+        assert.strictEqual(String(refreshCookie.attributes.samesite).toLowerCase(), 'none', 'HTTPS proxy refresh cookie must use SameSite=None for iframe persistence');
+
+        // 22b. Cookie round-trip to /api/platform/overview succeeds with issued access cookie
+        const overviewRes = await makeRequest(server, '/api/platform/overview', 'GET', {
+          host: `127.0.0.1:${addr.port}`,
+          Cookie: `${COOKIE_NAMES.ACCESS_TOKEN}=${accessCookie.value}`,
+        });
+        assert.strictEqual(overviewRes.status, 200, 'Issued login cookie must authenticate /api/platform/overview');
+        assert(overviewRes.body.platformState, 'Overview payload must be returned');
+
+        // 22c. Refresh & logout under HTTPS proxy preserve matching Secure + SameSite=None attributes
+        const refreshRes = await makeRequest(server, '/api/auth/refresh', 'POST', {
+          host: 'ais-dev-preview.example.run.app',
+          origin: proxyOrigin,
+          'x-forwarded-proto': 'https',
+          Cookie: `${COOKIE_NAMES.REFRESH_TOKEN}=${refreshCookie.value}`,
+        });
+        assert.strictEqual(refreshRes.status, 200, 'HTTPS proxy refresh must succeed');
+        assert.strictEqual(refreshRes.cookies[COOKIE_NAMES.ACCESS_TOKEN].attributes.secure, true);
+        assert.strictEqual(String(refreshRes.cookies[COOKIE_NAMES.ACCESS_TOKEN].attributes.samesite).toLowerCase(), 'none');
+
+        const logoutRes = await makeRequest(server, '/api/auth/logout', 'POST', {
+          host: 'ais-dev-preview.example.run.app',
+          origin: proxyOrigin,
+          'x-forwarded-proto': 'https',
+          Cookie: `${COOKIE_NAMES.ACCESS_TOKEN}=${refreshRes.cookies[COOKIE_NAMES.ACCESS_TOKEN].value}`,
+        });
+        assert.strictEqual(logoutRes.status, 200);
+        assert.strictEqual(logoutRes.cookies[COOKIE_NAMES.ACCESS_TOKEN].attributes.secure, true, 'Clear cookie must match Secure attribute');
+        assert.strictEqual(String(logoutRes.cookies[COOKIE_NAMES.ACCESS_TOKEN].attributes.samesite).toLowerCase(), 'none', 'Clear cookie must match SameSite=None attribute');
+      } finally {
+        await new Promise<void>((resolve) => server.close(() => resolve()));
+      }
+      console.log('  ✓ Criterion 22: HTTPS proxy / iframe cookies use Secure + SameSite=None and authenticate /api/platform/overview');
+    }
   } finally {
     // Restore environment
     for (const key of Object.keys(process.env)) {
