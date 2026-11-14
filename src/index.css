@@ -1,76 +1,112 @@
 @import "tailwindcss";
 
 @theme {
-  /* Brand Core - DialPulse Primary */
-  --color-primary: #00695c;
-  --color-primary-hover: #004d40;
-  --color-on-primary: #ffffff;
-  --color-primary-container: #cce8e1;
-  --color-on-primary-container: #00201b;
+  /* Official DialPulse Brand Palette (60 / 30 / 10) */
+  --color-oat-milk: #E5C8B2;
+  --color-forest-green: #228B22;
+  --color-forest-green-deep: #175E17;
+  --color-forest-green-dark: #114711;
+  --color-tomato-red: #FF6347;
+  --color-tomato-red-hover: #F25236;
 
-  /* Secondary */
-  --color-secondary: #4a635d;
-  --color-on-secondary: #ffffff;
-  --color-secondary-container: #cce8e0;
-  --color-on-secondary-container: #05201a;
+  /* Brand Semantic Roles */
+  --color-primary: #E5C8B2;
+  --color-secondary: #228B22;
+  --color-accent: #FF6347;
 
-  /* Tertiary */
-  --color-tertiary: #006558;
-  --color-on-tertiary: #ffffff;
-  --color-tertiary-container: #cce8e0;
+  /* Text & Accessibility (WCAG AA+) */
+  --color-text-primary: #282820;
+  --color-text-secondary: #5C554D;
+  --color-text-muted: #6E665D;
+  --color-text-on-green: #FFFFFF;
+  --color-text-on-tomato: #282820;
 
-  /* Error & Semantic */
-  --color-error: #ba1a1a;
-  --color-on-error: #ffffff;
-  --color-error-container: #ffdad6;
-  --color-on-error-container: #410002;
-  --color-success: #10b981;
-  --color-warning: #f59e0b;
+  /* Warm Oat Milk Surface Hierarchy */
+  --color-background: #E5C8B2;
+  --color-on-background: #282820;
+  --color-surface: #F5E9DF;
+  --color-surface-raised: #FAF3ED;
+  --color-surface-inset: #ECD9C8;
+  --color-surface-hover: #EEDBCC;
+  --color-on-surface: #282820;
+  --color-on-surface-variant: #5C554D;
 
-  /* Background & Surface Palette - White Canonical Theme */
-  --color-background: #ffffff;
-  --color-on-background: #0f172a;
-  --color-surface: #ffffff;
-  --color-on-surface: #0f172a;
-  --color-surface-secondary: #f8faf9;
-  --color-surface-subtle: #f4f7f6;
-  --color-surface-hover: #f1f5f4;
-  --color-surface-variant: #f8faf9;
-  --color-on-surface-variant: #475569;
+  /* Structural Borders & Focus */
+  --color-border: #CBB5A4;
+  --color-border-subtle: #DFCBB9;
+  --color-border-strong: #B39B88;
+  --color-outline: #CBB5A4;
+  --color-focus: #228B22;
 
-  /* Surface Containers */
-  --color-surface-container-lowest: #ffffff;
-  --color-surface-container-low: #f8faf9;
-  --color-surface-container: #f4f7f6;
-  --color-surface-container-high: #f1f5f4;
-  --color-surface-container-highest: #e2e8f0;
+  /* Distinct Semantic Status Colors */
+  --color-success: #176B2A;
+  --color-success-bg: #E5F4E8;
+  --color-success-border: #A7D7B0;
+  --color-warning: #8A4B08;
+  --color-warning-bg: #FEF3DF;
+  --color-warning-border: #E8C48B;
+  --color-error: #A61B1B;
+  --color-error-bg: #FDECEC;
+  --color-error-border: #EAB5B5;
+  --color-info: #165E7D;
+  --color-info-bg: #E8F4FA;
+  --color-info-border: #A8D2E5;
 
-  /* Outline & Borders */
-  --color-outline: #e2e8f0;
-  --color-outline-strong: #cbd5e1;
-  --color-outline-variant: #e2e8f0;
-
-  /* Text Colors */
-  --color-text-primary: #0f172a;
-  --color-text-secondary: #475569;
-  --color-text-muted: #64748b;
+  /* Shape & Depth */
+  --radius-card: 18px;
+  --radius-control: 12px;
+  --shadow-card: 0 4px 18px rgba(40, 40, 32, 0.08);
+  --shadow-elevated: 0 10px 28px rgba(40, 40, 32, 0.12);
 
   /* Typography */
   --font-display: 'Plus Jakarta Sans', ui-sans-serif, system-ui, sans-serif;
   --font-heading: 'Plus Jakarta Sans', ui-sans-serif, system-ui, sans-serif;
-  --font-sans: 'Roboto', ui-sans-serif, system-ui, sans-serif;
-  --font-body: 'Roboto', ui-sans-serif, system-ui, sans-serif;
+  --font-sans: 'DM Sans', ui-sans-serif, system-ui, sans-serif;
+  --font-body: 'DM Sans', ui-sans-serif, system-ui, sans-serif;
   --font-mono: 'JetBrains Mono', ui-monospace, monospace;
 
   /* Motion */
-  --animate-fade-in: fadeIn 0.3s cubic-bezier(0.2, 0, 0, 1) forwards;
-  --animate-slide-up: slideUp 0.4s cubic-bezier(0.2, 0, 0, 1) forwards;
+  --animate-fade-in: fadeIn 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  --animate-slide-up: slideUp 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
 :root {
   color-scheme: light;
+  --color-oat-milk: #E5C8B2;
+  --color-forest-green: #228B22;
+  --color-forest-green-deep: #175E17;
+  --color-forest-green-dark: #114711;
+  --color-tomato-red: #FF6347;
+  --color-tomato-red-hover: #F25236;
+
+  --color-primary: var(--color-oat-milk);
+  --color-secondary: var(--color-forest-green);
+  --color-accent: var(--color-tomato-red);
+
+  --color-text-primary: #282820;
+  --color-text-secondary: #5C554D;
+  --color-text-muted: #6E665D;
+  --color-text-on-green: #FFFFFF;
+  --color-text-on-tomato: #282820;
+
+  --color-background: var(--color-oat-milk);
+  --color-surface: #F5E9DF;
+  --color-surface-raised: #FAF3ED;
+  --color-surface-inset: #ECD9C8;
+  --color-surface-hover: #EEDBCC;
+
+  --color-border: #CBB5A4;
+  --color-border-subtle: #DFCBB9;
+  --color-border-strong: #B39B88;
+  --color-focus: var(--color-forest-green);
+
+  --radius-card: 18px;
+  --radius-control: 12px;
+  --shadow-card: 0 4px 18px rgba(40, 40, 32, 0.08);
+  --shadow-elevated: 0 10px 28px rgba(40, 40, 32, 0.12);
+
   background-color: var(--color-background);
-  color: var(--color-on-background);
+  color: var(--color-text-primary);
   font-family: var(--font-body);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -78,14 +114,15 @@
 
 body {
   font-family: var(--font-body);
-  color: #0f172a;
-  background-color: var(--color-surface);
+  color: var(--color-text-primary);
+  background-color: var(--color-background);
   margin: 0;
   padding: 0;
 }
 
 h1, h2, h3, h4, h5, h6 {
   font-family: var(--font-heading);
+  text-wrap: balance;
 }
 
 .font-display {
@@ -96,10 +133,14 @@ code, pre, .font-mono {
   font-family: var(--font-mono);
 }
 
-/* Crisp minimal scrollbar */
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Warm Oat Milk minimal scrollbar */
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 7px;
+  height: 7px;
 }
 
 ::-webkit-scrollbar-track {
@@ -107,12 +148,12 @@ code, pre, .font-mono {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #cbd5e1;
+  background: #B39B88;
   border-radius: 9999px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #94a3b8;
+  background: #8D7664;
 }
 
 @keyframes fadeIn {
@@ -121,8 +162,14 @@ code, pre, .font-mono {
 }
 
 @keyframes slideUp {
-  from { opacity: 0; transform: translateY(12px); }
+  from { opacity: 0; transform: translateY(8px); }
   to { opacity: 1; transform: translateY(0); }
 }
 
-
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

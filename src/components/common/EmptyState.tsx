@@ -23,49 +23,49 @@ export const EmptyState: React.FC<EmptyStateProps> = ({
   const renderIcon = () => {
     switch (iconType) {
       case 'database':
-        return <Database className="w-6 h-6 text-[#00695C]" />;
+        return <Database className="w-6 h-6 text-[#175E17]" />;
       case 'security':
-        return <ShieldAlert className="w-6 h-6 text-[#BA1A1A]" />;
+        return <ShieldAlert className="w-6 h-6 text-[#A61B1B]" />;
       case 'alert':
-        return <AlertCircle className="w-6 h-6 text-amber-600" />;
+        return <AlertCircle className="w-6 h-6 text-[#8A4B08]" />;
       case 'infra':
-        return <Cpu className="w-6 h-6 text-indigo-600" />;
+        return <Cpu className="w-6 h-6 text-[#175E17]" />;
       default:
-        return <Inbox className="w-6 h-6 text-slate-400" />;
+        return <Inbox className="w-6 h-6 text-[#5C554D]" />;
     }
   };
 
   const getBadgeClass = () => {
     switch (statusBadge) {
       case 'REAL':
-        return 'bg-emerald-50 text-emerald-800 border-emerald-300';
+        return 'bg-[#E5F4E8] text-[#114E1E] border-[#A7D7B0]';
       case 'PARTIAL':
-        return 'bg-teal-50 text-[#00695C] border-teal-300';
+        return 'bg-[#E6F2E6] text-[#175E17] border-[#228B22]/35';
       case 'AWAITING CONNECTION':
-        return 'bg-amber-50 text-amber-900 border-amber-300';
+        return 'bg-[#FEF3DF] text-[#6F3B05] border-[#E8C48B]';
       default:
-        return 'bg-slate-100 text-slate-700 border-slate-300';
+        return 'bg-[#ECD9C8] text-[#5C554D] border-[#CBB5A4]';
     }
   };
 
   return (
-    <div className="flex flex-col items-center justify-center p-8 bg-[#F8FAF9]/80 rounded-2xl border border-dashed border-slate-300 text-center my-4">
-      <div className="w-12 h-12 rounded-2xl bg-white flex items-center justify-center shadow-2xs border border-slate-200 mb-3">
+    <div className="flex flex-col items-center justify-center p-8 bg-[#F5E9DF]/80 rounded-[18px] border border-dashed border-[#CBB5A4] text-center my-4 mx-4">
+      <div className="w-12 h-12 rounded-[14px] bg-[#FAF3ED] flex items-center justify-center shadow-[0_2px_8px_rgba(40,40,32,0.06)] border border-[#CBB5A4] mb-3">
         {renderIcon()}
       </div>
 
       <div className="mb-2">
         <span
-          className={`text-[9px] uppercase font-mono font-bold tracking-wider px-2 py-0.5 rounded-md border ${getBadgeClass()}`}
+          className={`text-[10px] uppercase font-mono font-bold tracking-wider px-2.5 py-0.5 rounded-[8px] border ${getBadgeClass()}`}
         >
           {statusBadge}
         </span>
       </div>
 
-      <h4 className="text-sm sm:text-base font-display font-bold text-slate-900 mb-1">
+      <h4 className="text-sm sm:text-base font-display font-bold text-[#282820] mb-1">
         {title}
       </h4>
-      <p className="text-xs text-slate-600 max-w-md mb-4 leading-relaxed font-sans">
+      <p className="text-xs text-[#5C554D] max-w-md mb-4 leading-relaxed font-sans">
         {description}
       </p>
 

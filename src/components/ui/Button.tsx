@@ -1,7 +1,7 @@
 import React from 'react';
 
 export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
-  variant?: 'filled' | 'elevated' | 'outlined' | 'text' | 'tonal' | 'destructive';
+  variant?: 'filled' | 'accent' | 'elevated' | 'outlined' | 'text' | 'tonal' | 'destructive';
   size?: 'xs' | 'sm' | 'md' | 'lg';
   icon?: React.ReactNode;
   loading?: boolean;
@@ -21,36 +21,32 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
     },
     ref
   ) => {
-    // Base styles
     const baseStyles =
-      'inline-flex items-center justify-center font-medium rounded-xl transition-all duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#00695C] focus-visible:ring-offset-2 disabled:opacity-40 disabled:pointer-events-none relative overflow-hidden group select-none cursor-pointer';
+      'inline-flex items-center justify-center font-semibold rounded-[12px] transition-all duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#228B22] focus-visible:ring-offset-2 focus-visible:ring-offset-[#FAF3ED] disabled:opacity-45 disabled:pointer-events-none relative overflow-hidden group select-none cursor-pointer whitespace-nowrap shrink-0';
 
-    // M3 / DialPulse Variants
     const variants = {
       filled:
-        'bg-[#00695C] text-white hover:bg-[#004D40] shadow-2xs hover:shadow-xs active:scale-[0.98]',
+        'bg-[#175E17] text-white border border-[#175E17] hover:bg-[#114711] hover:border-[#114711] shadow-[0_2px_8px_rgba(23,94,23,0.18)] active:scale-[0.98]',
+      accent:
+        'bg-[#FF6347] text-[#282820] border border-[#E65137] hover:bg-[#F25236] shadow-[0_2px_10px_rgba(255,99,71,0.22)] active:scale-[0.98]',
       tonal:
-        'bg-[#CCE8E1] text-[#00201B] hover:bg-[#B2DFDB] active:scale-[0.98]',
+        'bg-[#E6F2E6] text-[#114711] border border-[#228B22]/30 hover:bg-[#D6EBD6] active:scale-[0.98]',
       elevated:
-        'bg-white text-slate-800 border border-slate-200 shadow-2xs hover:shadow-xs hover:bg-slate-50 active:scale-[0.98]',
+        'bg-[#FAF3ED] text-[#282820] border border-[#CBB5A4] shadow-[0_2px_8px_rgba(40,40,32,0.06)] hover:bg-[#F5E9DF] hover:border-[#B39B88] active:scale-[0.98]',
       outlined:
-        'border border-slate-300 bg-transparent hover:bg-slate-100/70 text-slate-800 active:scale-[0.98]',
+        'border border-[#CBB5A4] bg-[#F5E9DF]/65 hover:bg-[#ECD9C8] hover:border-[#B39B88] text-[#282820] active:scale-[0.98]',
       text:
-        'bg-transparent text-[#00695C] hover:bg-teal-50/70 px-3',
+        'bg-transparent text-[#175E17] hover:bg-[#228B22]/10 px-3',
       destructive:
-        'bg-[#BA1A1A] text-white hover:bg-red-800 shadow-2xs hover:shadow-xs active:scale-[0.98]',
+        'bg-[#A61B1B] text-white border border-[#A61B1B] hover:bg-[#871414] shadow-[0_2px_8px_rgba(166,27,27,0.18)] active:scale-[0.98]',
     };
 
     const sizes = {
-      xs: 'h-7 px-2.5 text-xs gap-1.5',
-      sm: 'h-8 px-3 text-xs gap-1.5',
-      md: 'h-9 px-4 text-xs font-semibold gap-2',
-      lg: 'h-11 px-5 text-sm font-semibold gap-2.5',
+      xs: 'h-8 px-3 text-xs gap-1.5',
+      sm: 'h-9 px-3.5 text-xs gap-1.5',
+      md: 'h-10 px-4 text-xs gap-2',
+      lg: 'h-11 px-5 text-sm gap-2',
     };
-
-    const StateLayer = () => (
-      <span className="absolute inset-0 bg-current opacity-0 group-hover:opacity-[0.06] group-active:opacity-[0.10] transition-opacity pointer-events-none" />
-    );
 
     return (
       <button
@@ -59,11 +55,10 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
         className={`${baseStyles} ${variants[variant]} ${sizes[size]} ${className}`}
         {...props}
       >
-        <StateLayer />
-        <span className="relative z-10 flex items-center gap-1.5">
+        <span className="relative z-10 inline-flex items-center justify-center gap-1.5">
           {loading ? (
             <svg
-              className="animate-spin w-3.5 h-3.5"
+              className="animate-spin w-3.5 h-3.5 shrink-0"
               xmlns="http://www.w3.org/2000/svg"
               fill="none"
               viewBox="0 0 24 24"
@@ -83,7 +78,7 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
               />
             </svg>
           ) : (
-            icon
+            icon && <span className="shrink-0 flex items-center">{icon}</span>
           )}
           <span>{children}</span>
         </span>

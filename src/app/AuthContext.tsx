@@ -48,7 +48,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const login = async (email: string, password: string): Promise<LoginResponse> => {
     setError(null);
-    setLoading(true);
     try {
       const res = await api.login(email, password);
       if ('user' in res) {
@@ -58,28 +57,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } catch (err: any) {
       setError(err.message || 'Login failed');
       throw err;
-    } finally {
-      setLoading(false);
     }
   };
 
   const verifyMfaChallenge = async (challengeToken: string, code: string) => {
     setError(null);
-    setLoading(true);
     try {
       const res = await api.submitMfaChallenge(challengeToken, code);
       setUser(res.user);
     } catch (err: any) {
       setError(err.message || 'MFA verification failed');
       throw err;
-    } finally {
-      setLoading(false);
     }
   };
 
   const verifyMfaRecovery = async (challengeToken: string, recoveryCode: string): Promise<number> => {
     setError(null);
-    setLoading(true);
     try {
       const res = await api.submitMfaRecovery(challengeToken, recoveryCode);
       setUser(res.user);
@@ -87,8 +80,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } catch (err: any) {
       setError(err.message || 'Recovery code verification failed');
       throw err;
-    } finally {
-      setLoading(false);
     }
   };
 

@@ -9,13 +9,18 @@ import { RbacMatrixView } from '../../features/rbac/RbacMatrixView.tsx';
 import { ModulePlaceholder } from '../../features/unimplemented/ModulePlaceholder.tsx';
 import { ImpersonationModal } from '../../features/impersonation/ImpersonationView.tsx';
 import { DbInfoModal } from '../common/DbInfoModal.tsx';
+import { MfaEnrollmentModal } from '../auth/MfaEnrollmentModal.tsx';
 import { api } from '../../app/api.ts';
+import { useAuth } from '../../app/AuthContext.tsx';
 import { HealthCheckData } from '../../app/types.ts';
 
 export const AppShell: React.FC = () => {
+  const { refreshUser } = useAuth();
   const [currentTab, setCurrentTab] = useState<NavItemKey>('overview');
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [impersonationOpen, setImpersonationOpen] = useState(false);
   const [dbModalOpen, setDbModalOpen] = useState(false);
+  const [mfaEnrollOpen, setMfaEnrollOpen] = useState(false);
   const [healthData, setHealthData] = useState<HealthCheckData | null>(null);
 
   const refreshHealth = async () => {
@@ -76,24 +81,29 @@ export const AppShell: React.FC = () => {
   };
 
   return (
-    <div className="flex h-screen bg-white overflow-hidden">
-      {/* Sidebar Navigation */}
+    <div className="flex h-screen bg-[#E5C8B2] overflow-hidden text-[#282820]">
+      {/* Sidebar Navigation (30% Forest Green) */}
       <Sidebar
         currentTab={currentTab}
         onSelectTab={(tab) => setCurrentTab(tab)}
         onOpenImpersonation={() => setImpersonationOpen(true)}
+        isOpen={mobileMenuOpen}
+        onClose={() => setMobileMenuOpen(false)}
       />
 
-      {/* Main Content Workspace */}
+      {/* Main Content Workspace (60% Oat Milk Foundation) */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         <TopBar
           currentTabName={currentTab}
           isDbConnected={healthData?.database?.reachable ?? false}
           dbLatencyMs={healthData?.database?.latencyMs}
           onOpenDbDetails={() => setDbModalOpen(true)}
+          onOpenMobileMenu={() => setMobileMenuOpen(true)}
+          onOpenMfaSetup={() => setMfaEnrollOpen(true)}
+          onNavigateToSecurity={() => setCurrentTab('security')}
         />
 
-        <main className="flex-1 overflow-y-auto bg-[#F8FAF9]">
+        <main className="flex-1 overflow-y-auto bg-[#E5C8B2]">
           {renderCurrentView()}
         </main>
       </div>
@@ -108,6 +118,13 @@ export const AppShell: React.FC = () => {
       <DbInfoModal
         isOpen={dbModalOpen}
         onClose={() => setDbModalOpen(false)}
+      />
+
+      {/* MFA Enrollment Modal */}
+      <MfaEnrollmentModal
+        isOpen={mfaEnrollOpen}
+        onClose={() => setMfaEnrollOpen(false)}
+        onEnrolled={() => refreshUser()}
       />
     </div>
   );

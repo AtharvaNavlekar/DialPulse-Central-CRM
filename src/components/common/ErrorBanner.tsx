@@ -14,14 +14,17 @@ export const ErrorBanner: React.FC<ErrorBannerProps> = ({
   title = 'Platform Operation Notice',
 }) => {
   return (
-    <div className="flex items-start justify-between p-4 my-3 bg-red-50/90 border border-red-200/90 rounded-2xl text-red-950 shadow-2xs">
+    <div
+      role="alert"
+      className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 my-3 bg-[#FDECEC] border border-[#EAB5B5] rounded-[18px] text-[#7E1414] shadow-[0_4px_14px_rgba(166,27,27,0.08)]"
+    >
       <div className="flex items-start gap-3">
-        <AlertCircle className="w-5 h-5 text-[#BA1A1A] shrink-0 mt-0.5" />
+        <AlertCircle className="w-5 h-5 text-[#A61B1B] shrink-0 mt-0.5" />
         <div>
-          <h5 className="text-[11px] font-mono font-bold uppercase tracking-wider text-[#BA1A1A]">
-            // {title}
+          <h5 className="text-[11px] font-mono font-bold uppercase tracking-wider text-[#A61B1B]">
+            {title}
           </h5>
-          <p className="text-xs mt-0.5 text-slate-700 leading-relaxed">{message}</p>
+          <p className="text-xs mt-0.5 text-[#282820] leading-relaxed">{message}</p>
         </div>
       </div>
       {onRetry && (
@@ -29,8 +32,8 @@ export const ErrorBanner: React.FC<ErrorBannerProps> = ({
           variant="outlined"
           size="xs"
           onClick={onRetry}
-          icon={<RotateCcw className="w-3 h-3 text-[#BA1A1A]" />}
-          className="border-red-300 text-[#BA1A1A] hover:bg-red-100/60 shrink-0"
+          icon={<RotateCcw className="w-3 h-3 text-[#A61B1B]" />}
+          className="border-[#EAB5B5] bg-[#FAF3ED] text-[#A61B1B] hover:bg-[#FDECEC] shrink-0 self-start sm:self-auto"
         >
           Retry
         </Button>

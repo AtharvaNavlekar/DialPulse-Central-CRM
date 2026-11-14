@@ -1,10 +1,24 @@
 import express from 'express';
 import cookieParser from 'cookie-parser';
+import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import * as dotenv from 'dotenv';
 
 dotenv.config();
+
+// In local development, refresh non-empty values from .env over stale container-boot env vars
+if (process.env.NODE_ENV !== 'production') {
+  const envPath = path.resolve(process.cwd(), '.env');
+  if (fs.existsSync(envPath)) {
+    const parsedEnv = dotenv.parse(fs.readFileSync(envPath));
+    for (const [key, value] of Object.entries(parsedEnv)) {
+      if (value && value.trim() !== '') {
+        process.env[key] = value;
+      }
+    }
+  }
+}
 
 import { getValidatedConfig } from './src/server/config/env.ts';
 import { requestContextMiddleware } from './src/server/middleware/request-context.ts';

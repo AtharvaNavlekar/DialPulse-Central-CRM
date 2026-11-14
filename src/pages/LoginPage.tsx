@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ArrowRight, AlertCircle, ShieldAlert, KeyRound, ArrowLeft, ShieldCheck, RefreshCw } from 'lucide-react';
+import { ArrowRight, AlertCircle, ShieldAlert, KeyRound, ArrowLeft, ShieldCheck, Eye, EyeOff } from 'lucide-react';
 import { useAuth } from '../app/AuthContext.tsx';
 import { Logo } from '../components/common/Logo.tsx';
 import { Button } from '../components/ui/Button.tsx';
@@ -7,10 +7,11 @@ import { Input } from '../components/ui/Input.tsx';
 import { Card } from '../components/ui/Card.tsx';
 
 export const LoginPage: React.FC = () => {
-  const { login, verifyMfaChallenge, verifyMfaRecovery, error: authError } = useAuth();
+  const { login, verifyMfaChallenge, verifyMfaRecovery } = useAuth();
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
 
@@ -80,43 +81,47 @@ export const LoginPage: React.FC = () => {
   const handleSelectEmail = (targetEmail: string) => {
     setEmail(targetEmail);
     setPassword('');
+    setLocalError(null);
   };
 
   return (
-    <div className="min-h-screen bg-[#F8FAF9] flex flex-col justify-center items-center p-4 selection:bg-teal-100">
-      <div className="w-full max-w-md space-y-6">
+    <div className="min-h-screen bg-[#E5C8B2] flex flex-col justify-center items-center p-4 sm:p-6 selection:bg-[#228B22]/20 selection:text-[#175E17]">
+      <div className="w-full max-w-md space-y-5">
         {/* Brand Header with DialPulse Logo */}
         <div className="flex flex-col items-center text-center space-y-2">
           <Logo size="lg" variant="light" showSubtitle={true} />
-          <div className="flex items-center gap-1.5 text-xs text-slate-500 font-mono pt-1">
+          <div className="flex items-center gap-1.5 text-xs text-[#5C554D] font-mono pt-1">
             <span>Privileged Internal Environment</span>
-            <span>·</span>
-            <span className="text-[#00695C] font-semibold">Tier-1 Access</span>
+            <span aria-hidden="true">·</span>
+            <span className="text-[#175E17] font-bold">Tier-1 Access</span>
           </div>
         </div>
 
         {/* Security Boundary Warning Card */}
-        <div className="p-3.5 bg-red-50/90 border border-red-200/90 rounded-2xl text-red-950 text-xs flex items-start gap-3 shadow-2xs">
-          <ShieldAlert className="w-4 h-4 text-[#BA1A1A] shrink-0 mt-0.5" />
+        <div className="p-3.5 bg-[#F5E9DF] border border-[#CBB5A4] rounded-[16px] text-[#282820] text-xs flex items-start gap-3 shadow-[0_4px_14px_rgba(40,40,32,0.06)]">
+          <ShieldAlert className="w-4 h-4 text-[#A61B1B] shrink-0 mt-0.5" />
           <div>
-            <span className="font-bold uppercase tracking-wider text-[10px] text-[#BA1A1A] font-mono">
-              // Restricted Platform Boundary
+            <span className="font-bold uppercase tracking-wider text-[10px] text-[#A61B1B] font-mono">
+              Restricted Platform Boundary
             </span>
-            <p className="mt-0.5 text-slate-700 text-[11px] leading-relaxed">
+            <p className="mt-0.5 text-[#5C554D] text-[11px] leading-relaxed">
               Exclusively for authorized DialPulse platform staff. Customer tenant accounts (owners, TLs, telecallers) have zero access here.
             </p>
           </div>
         </div>
 
         {/* Dynamic Card: Password Login vs MFA Challenge */}
-        <Card variant="elevated" rounded="3xl" className="p-7 space-y-5">
-          {(localError || authError) && (
-            <div className="p-3 bg-red-50/90 border border-red-200 text-red-900 text-xs rounded-xl flex items-start gap-2.5">
-              <AlertCircle className="w-4 h-4 text-[#BA1A1A] shrink-0 mt-0.5" />
+        <Card variant="elevated" rounded="3xl" className="p-6 sm:p-7 space-y-5">
+          {localError && (
+            <div
+              role="alert"
+              className="p-3 bg-[#FDECEC] border border-[#EAB5B5] text-[#7E1414] text-xs rounded-[12px] flex items-start gap-2.5"
+            >
+              <AlertCircle className="w-4 h-4 text-[#A61B1B] shrink-0 mt-0.5" />
               <div className="flex-1">
-                <p className="text-xs leading-relaxed">{localError || authError}</p>
+                <p className="text-xs leading-relaxed font-medium">{localError}</p>
                 {remainingAttempts !== null && remainingAttempts > 0 && (
-                  <p className="text-[11px] text-red-700 mt-1 font-medium">
+                  <p className="text-[11px] text-[#A61B1B] mt-1 font-semibold tabular-nums">
                     Remaining attempts before temporary lockout: {remainingAttempts}
                   </p>
                 )}
@@ -131,6 +136,7 @@ export const LoginPage: React.FC = () => {
                 <Input
                   label="Platform Staff Email"
                   type="email"
+                  autoComplete="username"
                   required
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
@@ -140,86 +146,89 @@ export const LoginPage: React.FC = () => {
 
                 <Input
                   label="Staff Password"
-                  type="password"
+                  type={showPassword ? 'text' : 'password'}
+                  autoComplete="current-password"
                   required
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   helperText="Verified against a server-side password hash"
+                  rightIcon={
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword((prev) => !prev)}
+                      aria-label={showPassword ? 'Hide password' : 'Show password'}
+                      className="p-0.5 text-[#5C554D] hover:text-[#282820] rounded cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-[#228B22]"
+                    >
+                      {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  }
                 />
 
                 <Button
                   type="submit"
-                  variant="filled"
+                  variant="accent"
                   size="lg"
                   loading={loading}
                   className="w-full"
                 >
                   <span>{loading ? 'Verifying Platform Staff...' : 'Access Control Center'}</span>
-                  <ArrowRight className="w-4 h-4 ml-1" />
+                  <ArrowRight className="w-4 h-4" />
                 </Button>
               </form>
 
               {/* Development Staff Quick Select Options */}
-              <div className="pt-4 border-t border-slate-100 space-y-2">
-                <div className="text-[10px] font-mono uppercase font-bold text-slate-400 tracking-wider">
-                  // Platform Staff Identities
+              <div className="pt-4 border-t border-[#DFCBB9] space-y-2.5">
+                <div className="text-[10px] font-mono uppercase font-bold text-[#5C554D] tracking-wider">
+                  Platform Staff Identities
                 </div>
                 <div className="grid grid-cols-1 gap-1.5">
-                  <button
-                    type="button"
-                    onClick={() => handleSelectEmail('admin@dialpulse.internal')}
-                    className="w-full py-2 px-3 rounded-xl bg-[#F8FAF9] hover:bg-slate-100 border border-slate-200 text-left flex items-center justify-between text-xs text-slate-800 transition-colors group cursor-pointer"
-                  >
-                    <div>
-                      <span className="font-semibold text-slate-900">admin@dialpulse.internal</span>
-                      <span className="text-[10px] font-mono text-slate-500 ml-1.5">· platform_admin</span>
-                    </div>
-                    <span className="text-[11px] font-mono text-[#00695C] font-semibold group-hover:underline">Select</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => handleSelectEmail('support@dialpulse.internal')}
-                    className="w-full py-2 px-3 rounded-xl bg-[#F8FAF9] hover:bg-slate-100 border border-slate-200 text-left flex items-center justify-between text-xs text-slate-800 transition-colors group cursor-pointer"
-                  >
-                    <div>
-                      <span className="font-semibold text-slate-900">support@dialpulse.internal</span>
-                      <span className="text-[10px] font-mono text-slate-500 ml-1.5">· platform_support</span>
-                    </div>
-                    <span className="text-[11px] font-mono text-[#00695C] font-semibold group-hover:underline">Select</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => handleSelectEmail('security@dialpulse.internal')}
-                    className="w-full py-2 px-3 rounded-xl bg-[#F8FAF9] hover:bg-slate-100 border border-slate-200 text-left flex items-center justify-between text-xs text-slate-800 transition-colors group cursor-pointer"
-                  >
-                    <div>
-                      <span className="font-semibold text-slate-900">security@dialpulse.internal</span>
-                      <span className="text-[10px] font-mono text-slate-500 ml-1.5">· platform_security</span>
-                    </div>
-                    <span className="text-[11px] font-mono text-[#00695C] font-semibold group-hover:underline">Select</span>
-                  </button>
+                  {[
+                    { email: 'admin@dialpulse.internal', role: 'platform_admin' },
+                    { email: 'support@dialpulse.internal', role: 'platform_support' },
+                    { email: 'security@dialpulse.internal', role: 'platform_security' },
+                  ].map((item) => {
+                    const isSelected = email === item.email;
+                    return (
+                      <button
+                        key={item.email}
+                        type="button"
+                        onClick={() => handleSelectEmail(item.email)}
+                        className={`w-full py-2.5 px-3 rounded-[12px] border text-left flex items-center justify-between text-xs transition-all duration-150 group cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-[#228B22] ${
+                          isSelected
+                            ? 'bg-[#E6F2E6] border-[#228B22] text-[#114711]'
+                            : 'bg-[#F5E9DF] hover:bg-[#ECD9C8] border-[#DFCBB9] text-[#282820]'
+                        }`}
+                      >
+                        <div className="truncate pr-2">
+                          <span className="font-semibold text-[#282820]">{item.email}</span>
+                          <span className="text-[10px] font-mono text-[#5C554D] ml-1.5">· {item.role}</span>
+                        </div>
+                        <span className="text-[11px] font-mono text-[#175E17] font-bold group-hover:underline shrink-0">
+                          {isSelected ? 'Selected' : 'Select'}
+                        </span>
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
             </>
           ) : (
             /* MFA Step-Up Verification */
             <div className="space-y-5">
-              <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-                <div className="flex items-center gap-2">
-                  <div className="w-8 h-8 rounded-xl bg-teal-50 border border-teal-200 flex items-center justify-center text-[#00695C]">
+              <div className="flex items-center justify-between pb-3 border-b border-[#DFCBB9]">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div className="w-9 h-9 rounded-[12px] bg-[#E6F2E6] border border-[#228B22]/30 flex items-center justify-center text-[#175E17] shrink-0">
                     <ShieldCheck className="w-4 h-4" />
                   </div>
-                  <div>
-                    <h2 className="text-sm font-semibold text-slate-900">Two-Factor Authentication</h2>
-                    <p className="text-[11px] text-slate-500 font-mono">{mfaChallenge.email}</p>
+                  <div className="min-w-0">
+                    <h2 className="text-sm font-display font-bold text-[#282820]">Two-Factor Authentication</h2>
+                    <p className="text-[11px] text-[#5C554D] font-mono truncate">{mfaChallenge.email}</p>
                   </div>
                 </div>
                 <button
                   type="button"
                   onClick={handleBackToLogin}
-                  className="text-xs text-slate-500 hover:text-slate-800 flex items-center gap-1 cursor-pointer"
+                  className="text-xs text-[#5C554D] hover:text-[#282820] flex items-center gap-1 font-medium cursor-pointer shrink-0"
                 >
                   <ArrowLeft className="w-3.5 h-3.5" />
                   <span>Back</span>
@@ -229,7 +238,7 @@ export const LoginPage: React.FC = () => {
               <form onSubmit={handleMfaSubmit} className="space-y-4">
                 {!isRecoveryMode ? (
                   <div>
-                    <label className="block text-xs font-medium text-slate-700 mb-1.5">
+                    <label className="block text-xs font-semibold text-[#282820] mb-1.5">
                       6-Digit Authenticator Code
                     </label>
                     <input
@@ -242,15 +251,15 @@ export const LoginPage: React.FC = () => {
                       value={mfaCode}
                       onChange={(e) => setMfaCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
                       placeholder="000000"
-                      className="w-full text-center tracking-[0.5em] text-2xl font-mono py-3 px-4 rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-[#00695C] focus:border-transparent bg-white shadow-2xs"
+                      className="w-full text-center tracking-[0.5em] text-2xl font-mono py-3 px-4 rounded-[12px] border border-[#CBB5A4] focus:outline-none focus:border-[#228B22] focus:ring-2 focus:ring-[#228B22]/20 bg-[#F5E9DF] focus:bg-[#FAF3ED] text-[#282820] transition-all tabular-nums"
                     />
-                    <p className="text-[11px] text-slate-500 mt-1.5 text-center">
+                    <p className="text-[11px] text-[#5C554D] mt-1.5 text-center">
                       Enter the current time-based code from your authenticator app
                     </p>
                   </div>
                 ) : (
                   <div>
-                    <label className="block text-xs font-medium text-slate-700 mb-1.5">
+                    <label className="block text-xs font-semibold text-[#282820] mb-1.5">
                       Single-Use Recovery Code
                     </label>
                     <input
@@ -260,9 +269,9 @@ export const LoginPage: React.FC = () => {
                       value={recoveryCode}
                       onChange={(e) => setRecoveryCode(e.target.value.toUpperCase().slice(0, 9))}
                       placeholder="XXXX-XXXX"
-                      className="w-full text-center font-mono tracking-widest text-lg py-3 px-4 rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-[#00695C] focus:border-transparent bg-white shadow-2xs"
+                      className="w-full text-center font-mono tracking-widest text-lg py-3 px-4 rounded-[12px] border border-[#CBB5A4] focus:outline-none focus:border-[#228B22] focus:ring-2 focus:ring-[#228B22]/20 bg-[#F5E9DF] focus:bg-[#FAF3ED] text-[#282820] transition-all"
                     />
-                    <p className="text-[11px] text-slate-500 mt-1.5 text-center">
+                    <p className="text-[11px] text-[#5C554D] mt-1.5 text-center">
                       Enter one of your 8-character recovery backup codes
                     </p>
                   </div>
@@ -270,25 +279,25 @@ export const LoginPage: React.FC = () => {
 
                 <Button
                   type="submit"
-                  variant="filled"
+                  variant="accent"
                   size="lg"
                   loading={loading}
                   className="w-full"
                   disabled={!isRecoveryMode ? mfaCode.length !== 6 : recoveryCode.length < 8}
                 >
                   <span>{loading ? 'Verifying Factor...' : 'Verify & Enter Control Center'}</span>
-                  <ArrowRight className="w-4 h-4 ml-1" />
+                  <ArrowRight className="w-4 h-4" />
                 </Button>
               </form>
 
-              <div className="pt-3 border-t border-slate-100 flex items-center justify-between text-xs">
+              <div className="pt-3 border-t border-[#DFCBB9] flex items-center justify-between text-xs">
                 <button
                   type="button"
                   onClick={() => {
                     setIsRecoveryMode(!isRecoveryMode);
                     setLocalError(null);
                   }}
-                  className="text-[#00695C] hover:underline font-medium text-xs flex items-center gap-1 cursor-pointer"
+                  className="text-[#175E17] hover:underline font-semibold text-xs flex items-center gap-1.5 cursor-pointer"
                 >
                   <KeyRound className="w-3.5 h-3.5" />
                   <span>{isRecoveryMode ? 'Use Authenticator Code' : 'Lost authenticator? Use recovery code'}</span>
@@ -299,7 +308,7 @@ export const LoginPage: React.FC = () => {
         </Card>
 
         {/* Security Compliance Footer */}
-        <div className="text-center text-[11px] text-slate-500 font-mono">
+        <div className="text-center text-[11px] text-[#5C554D] font-mono">
           DialPulse Central CRM · Privileged Staff Access · Phase 01C Protected
         </div>
       </div>

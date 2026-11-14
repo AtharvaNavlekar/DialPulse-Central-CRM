@@ -1,19 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import {
-  Search,
   Filter,
   Plus,
   RefreshCw,
   Eye,
   AlertOctagon,
   CheckCircle,
-  Building2,
-  Calendar,
-  User,
-  Phone,
-  Mail,
-  Server,
-  Users,
 } from 'lucide-react';
 import { api } from '../../app/api.ts';
 import { Tenant } from '../../app/types.ts';
@@ -33,6 +25,7 @@ export const TenantListView: React.FC = () => {
   const [tenants, setTenants] = useState<Tenant[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
   const [isDbConfigured, setIsDbConfigured] = useState(true);
 
   // Filters & Search
@@ -104,12 +97,14 @@ export const TenantListView: React.FC = () => {
   const handleOpenSuspend = (tenant: Tenant) => {
     setSelectedTenant(tenant);
     setSuspendReason('');
+    setActionError(null);
     setSuspendModalOpen(true);
   };
 
   const handleConfirmSuspend = async () => {
     if (!selectedTenant || !suspendReason.trim()) return;
     setSuspendLoading(true);
+    setActionError(null);
     try {
       await api.suspendTenant(selectedTenant.id, suspendReason);
       setSuspendModalOpen(false);
@@ -125,7 +120,7 @@ export const TenantListView: React.FC = () => {
         setStepUpOpen(true);
         return;
       }
-      alert(`Failed to suspend tenant: ${err.message}`);
+      setActionError(`Failed to suspend tenant: ${err.message}`);
     } finally {
       setSuspendLoading(false);
     }
@@ -133,12 +128,14 @@ export const TenantListView: React.FC = () => {
 
   const handleOpenReactivate = (tenant: Tenant) => {
     setSelectedTenant(tenant);
+    setActionError(null);
     setReactivateModalOpen(true);
   };
 
   const handleConfirmReactivate = async () => {
     if (!selectedTenant) return;
     setReactivateLoading(true);
+    setActionError(null);
     try {
       await api.reactivateTenant(selectedTenant.id);
       setReactivateModalOpen(false);
@@ -154,7 +151,7 @@ export const TenantListView: React.FC = () => {
         setStepUpOpen(true);
         return;
       }
-      alert(`Failed to reactivate tenant: ${err.message}`);
+      setActionError(`Failed to reactivate tenant: ${err.message}`);
     } finally {
       setReactivateLoading(false);
     }
@@ -163,6 +160,7 @@ export const TenantListView: React.FC = () => {
   const handleCreateTenant = async (e: React.FormEvent) => {
     e.preventDefault();
     setCreateLoading(true);
+    setActionError(null);
     try {
       await api.createTenant(newTenant);
       setCreateModalOpen(false);
@@ -178,14 +176,14 @@ export const TenantListView: React.FC = () => {
       });
       await loadTenants();
     } catch (err: any) {
-      alert(`Provision error: ${err.message}`);
+      setActionError(`Provision error: ${err.message}`);
     } finally {
       setCreateLoading(false);
     }
   };
 
   return (
-    <div className="p-6 max-w-7xl mx-auto space-y-6">
+    <div className="p-4 sm:p-6 max-w-7xl mx-auto space-y-6">
       {/* Header */}
       <PageHeader
         categoryTag="TENANT MANAGEMENT"
@@ -196,7 +194,7 @@ export const TenantListView: React.FC = () => {
             <Button
               variant="outlined"
               size="sm"
-              icon={<RefreshCw className={`w-3.5 h-3.5 text-slate-600 ${loading ? 'animate-spin' : ''}`} />}
+              icon={<RefreshCw className={`w-3.5 h-3.5 text-[#282820] ${loading ? 'animate-spin' : ''}`} />}
               onClick={loadTenants}
             >
               Refresh
@@ -204,10 +202,13 @@ export const TenantListView: React.FC = () => {
 
             {canCreate && (
               <Button
-                variant="filled"
+                variant="accent"
                 size="sm"
-                icon={<Plus className="w-3.5 h-3.5 text-white" />}
-                onClick={() => setCreateModalOpen(true)}
+                icon={<Plus className="w-3.5 h-3.5" />}
+                onClick={() => {
+                  setActionError(null);
+                  setCreateModalOpen(true);
+                }}
               >
                 Provision Tenant
               </Button>
@@ -219,7 +220,7 @@ export const TenantListView: React.FC = () => {
       {error && <ErrorBanner message={error} onRetry={loadTenants} />}
 
       {/* Control Bar: Search & Filters */}
-      <Card variant="default" rounded="2xl" className="p-3.5 flex flex-col md:flex-row items-center justify-between gap-3">
+      <Card variant="default" rounded="2xl" className="p-3.5 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
         <div className="w-full md:w-80">
           <SearchInput
             placeholder="Search by name, ID, slug, email..."
@@ -228,14 +229,14 @@ export const TenantListView: React.FC = () => {
           />
         </div>
 
-        <div className="flex items-center gap-3 w-full md:w-auto justify-end text-xs">
+        <div className="flex flex-wrap items-center gap-3 w-full md:w-auto justify-end text-xs">
           <div className="flex items-center gap-1.5">
-            <Filter className="w-3.5 h-3.5 text-slate-400" />
-            <span className="text-slate-500 font-medium">Status:</span>
+            <Filter className="w-3.5 h-3.5 text-[#5C554D]" />
+            <span className="text-[#5C554D] font-medium">Status:</span>
             <select
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
-              className="bg-[#F8FAF9] border border-slate-300 px-2.5 py-1.5 rounded-xl text-slate-800 font-medium focus:outline-none focus:border-[#00695C] cursor-pointer"
+              className="bg-[#F5E9DF] border border-[#CBB5A4] px-2.5 py-2 rounded-[12px] text-[#282820] font-medium focus:outline-none focus:border-[#228B22] focus:ring-2 focus:ring-[#228B22]/20 cursor-pointer"
             >
               <option value="all">All Statuses</option>
               <option value="active">Active</option>
@@ -246,11 +247,11 @@ export const TenantListView: React.FC = () => {
           </div>
 
           <div className="flex items-center gap-1.5">
-            <span className="text-slate-500 font-medium">Sort:</span>
+            <span className="text-[#5C554D] font-medium">Sort:</span>
             <select
               value={sortOrder}
               onChange={(e) => setSortOrder(e.target.value)}
-              className="bg-[#F8FAF9] border border-slate-300 px-2.5 py-1.5 rounded-xl text-slate-800 font-medium focus:outline-none focus:border-[#00695C] cursor-pointer"
+              className="bg-[#F5E9DF] border border-[#CBB5A4] px-2.5 py-2 rounded-[12px] text-[#282820] font-medium focus:outline-none focus:border-[#228B22] focus:ring-2 focus:ring-[#228B22]/20 cursor-pointer"
             >
               <option value="created_desc">Newest First</option>
               <option value="created_asc">Oldest First</option>
@@ -271,8 +272,8 @@ export const TenantListView: React.FC = () => {
             description="The Tenant Management subsystem is architected for PostgreSQL. Connect DATABASE_URL in .env to persist live tenants. No fake records are fabricated."
           />
         ) : loading && tenants.length === 0 ? (
-          <div className="p-12 text-center text-xs text-slate-500">
-            <RefreshCw className="w-6 h-6 animate-spin mx-auto text-[#00695C] mb-2" />
+          <div className="p-12 text-center text-xs text-[#5C554D]">
+            <RefreshCw className="w-6 h-6 animate-spin mx-auto text-[#175E17] mb-2" />
             Loading tenant directory from PostgreSQL...
           </div>
         ) : tenants.length === 0 ? (
@@ -298,7 +299,7 @@ export const TenantListView: React.FC = () => {
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs border-collapse">
               <thead>
-                <tr className="bg-[#F8FAF9] border-b border-slate-200/90 text-slate-500 font-mono uppercase text-[10px] tracking-wider">
+                <tr className="bg-[#F5E9DF] border-b border-[#CBB5A4] text-[#5C554D] font-mono uppercase text-[10px] tracking-wider">
                   <th className="py-3 px-4 font-semibold">Tenant Name & ID</th>
                   <th className="py-3 px-4 font-semibold">Status</th>
                   <th className="py-3 px-4 font-semibold">Plan</th>
@@ -308,12 +309,12 @@ export const TenantListView: React.FC = () => {
                   <th className="py-3 px-4 font-semibold text-right">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100">
+              <tbody className="divide-y divide-[#DFCBB9]">
                 {tenants.map((t) => (
-                  <tr key={t.id} className="hover:bg-[#F8FAF9]/80 transition-colors">
+                  <tr key={t.id} className="hover:bg-[#F5E9DF]/80 transition-colors">
                     <td className="py-3 px-4">
-                      <div className="font-semibold text-slate-900 font-display">{t.name}</div>
-                      <div className="font-mono text-slate-400 text-[10px] mt-0.5">
+                      <div className="font-semibold text-[#282820] font-display">{t.name}</div>
+                      <div className="font-mono text-[#6E665D] text-[10px] mt-0.5">
                         {t.id} · /{t.slug}
                       </div>
                     </td>
@@ -321,24 +322,24 @@ export const TenantListView: React.FC = () => {
                       <StatusChip status={t.status} type="tenant" />
                     </td>
                     <td className="py-3 px-4">
-                      <span className="font-mono uppercase text-[10px] text-slate-700 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded-lg font-medium">
+                      <span className="font-mono uppercase text-[10px] text-[#282820] bg-[#F5E9DF] border border-[#CBB5A4] px-2 py-0.5 rounded-[8px] font-semibold">
                         {t.plan}
                       </span>
                     </td>
-                    <td className="py-3 px-4 font-mono text-slate-500 text-[11px]">
+                    <td className="py-3 px-4 font-mono text-[#5C554D] text-[11px]">
                       {t.region}
                     </td>
-                    <td className="py-3 px-4 font-mono text-slate-600">
+                    <td className="py-3 px-4 font-mono text-[#282820]">
                       {t.ownerEmail}
                     </td>
-                    <td className="py-3 px-4 font-mono text-slate-700">
+                    <td className="py-3 px-4 font-mono text-[#282820] tabular-nums">
                       {t.activeUsersCount} / {t.maxUsers}
                     </td>
                     <td className="py-3 px-4 text-right">
                       <div className="inline-flex items-center gap-1.5 justify-end">
                         <button
                           onClick={() => handleOpenInspect(t)}
-                          className="p-1.5 text-slate-600 hover:text-[#00695C] hover:bg-teal-50 rounded-lg transition-colors cursor-pointer"
+                          className="p-1.5 text-[#5C554D] hover:text-[#175E17] hover:bg-[#E6F2E6] rounded-[8px] transition-colors cursor-pointer"
                           title="Inspect Tenant"
                         >
                           <Eye className="w-4 h-4" />
@@ -347,7 +348,7 @@ export const TenantListView: React.FC = () => {
                         {t.status === 'active' && canSuspend && (
                           <button
                             onClick={() => handleOpenSuspend(t)}
-                            className="p-1.5 text-rose-600 hover:text-[#BA1A1A] hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
+                            className="p-1.5 text-[#A61B1B] hover:bg-[#FDECEC] rounded-[8px] transition-colors cursor-pointer"
                             title="Suspend Tenant"
                           >
                             <AlertOctagon className="w-4 h-4" />
@@ -357,7 +358,7 @@ export const TenantListView: React.FC = () => {
                         {t.status === 'suspended' && canReactivate && (
                           <button
                             onClick={() => handleOpenReactivate(t)}
-                            className="p-1.5 text-emerald-600 hover:text-emerald-800 hover:bg-emerald-50 rounded-lg transition-colors cursor-pointer"
+                            className="p-1.5 text-[#175E17] hover:bg-[#E5F4E8] rounded-[8px] transition-colors cursor-pointer"
                             title="Reactivate Tenant"
                           >
                             <CheckCircle className="w-4 h-4" />
@@ -383,78 +384,78 @@ export const TenantListView: React.FC = () => {
           maxWidth="xl"
         >
           <div className="space-y-4 text-xs">
-            <div className="p-3.5 bg-[#F8FAF9] rounded-2xl border border-slate-200 flex items-center justify-between">
+            <div className="p-3.5 bg-[#F5E9DF] rounded-[14px] border border-[#DFCBB9] flex items-center justify-between">
               <div>
-                <span className="text-[10px] uppercase font-mono text-slate-400">Current Status</span>
+                <span className="text-[10px] uppercase font-mono text-[#5C554D]">Current Status</span>
                 <div className="mt-1">
                   <StatusChip status={selectedTenant.status} type="tenant" size="md" />
                 </div>
               </div>
               <div className="text-right">
-                <span className="text-[10px] uppercase font-mono text-slate-400">Assigned Plan</span>
-                <p className="font-display font-bold text-slate-900 uppercase mt-1">
+                <span className="text-[10px] uppercase font-mono text-[#5C554D]">Assigned Plan</span>
+                <p className="font-display font-bold text-[#282820] uppercase mt-1">
                   {selectedTenant.plan}
                 </p>
               </div>
             </div>
 
             {selectedTenant.status === 'suspended' && (
-              <div className="p-3 bg-red-50/90 border border-red-200 text-red-950 rounded-2xl">
-                <div className="font-semibold flex items-center gap-1.5 text-[#BA1A1A]">
+              <div className="p-3.5 bg-[#FDECEC] border border-[#EAB5B5] text-[#7E1414] rounded-[14px]">
+                <div className="font-semibold flex items-center gap-1.5 text-[#A61B1B]">
                   <AlertOctagon className="w-4 h-4" />
                   <span>Suspension Order Active</span>
                 </div>
-                <p className="mt-1 text-slate-700">
+                <p className="mt-1 text-[#282820]">
                   Reason: {selectedTenant.suspensionReason || 'No explicit reason specified'}
                 </p>
                 {selectedTenant.suspendedAt && (
-                  <p className="text-[10px] font-mono text-rose-700 mt-1">
+                  <p className="text-[10px] font-mono text-[#A61B1B] mt-1">
                     Suspended At: {new Date(selectedTenant.suspendedAt).toLocaleString()}
                   </p>
                 )}
               </div>
             )}
 
-            <div className="grid grid-cols-2 gap-4">
-              <div className="p-3.5 bg-white border border-slate-200 rounded-2xl space-y-2">
-                <div className="font-semibold text-slate-800 border-b border-slate-100 pb-1 font-display">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="p-3.5 bg-[#F5E9DF] border border-[#DFCBB9] rounded-[14px] space-y-2">
+                <div className="font-semibold text-[#282820] border-b border-[#DFCBB9] pb-1 font-display">
                   Tenant Identity & Scope
                 </div>
-                <div className="space-y-1 text-slate-600">
+                <div className="space-y-1 text-[#5C554D]">
                   <div>
-                    <span className="text-slate-400 font-mono">Slug:</span> /{selectedTenant.slug}
+                    <span className="text-[#6E665D] font-mono">Slug:</span> /{selectedTenant.slug}
                   </div>
                   <div>
-                    <span className="text-slate-400 font-mono">Region:</span> {selectedTenant.region}
+                    <span className="text-[#6E665D] font-mono">Region:</span> {selectedTenant.region}
                   </div>
                   <div>
-                    <span className="text-slate-400 font-mono">Created:</span>{' '}
+                    <span className="text-[#6E665D] font-mono">Created:</span>{' '}
                     {new Date(selectedTenant.createdAt).toLocaleString()}
                   </div>
                 </div>
               </div>
 
-              <div className="p-3.5 bg-white border border-slate-200 rounded-2xl space-y-2">
-                <div className="font-semibold text-slate-800 border-b border-slate-100 pb-1 font-display">
+              <div className="p-3.5 bg-[#F5E9DF] border border-[#DFCBB9] rounded-[14px] space-y-2">
+                <div className="font-semibold text-[#282820] border-b border-[#DFCBB9] pb-1 font-display">
                   Contact & Capacity
                 </div>
-                <div className="space-y-1 text-slate-600">
+                <div className="space-y-1 text-[#5C554D]">
                   <div>
-                    <span className="text-slate-400 font-mono">Owner Email:</span> {selectedTenant.ownerEmail}
+                    <span className="text-[#6E665D] font-mono">Owner Email:</span> {selectedTenant.ownerEmail}
                   </div>
                   <div>
-                    <span className="text-slate-400 font-mono">Contact:</span>{' '}
+                    <span className="text-[#6E665D] font-mono">Contact:</span>{' '}
                     {selectedTenant.contactName || 'Unset'}
                   </div>
-                  <div>
-                    <span className="text-slate-400 font-mono">User Seats:</span>{' '}
+                  <div className="tabular-nums">
+                    <span className="text-[#6E665D] font-mono">User Seats:</span>{' '}
                     {selectedTenant.activeUsersCount} / {selectedTenant.maxUsers} max
                   </div>
                 </div>
               </div>
             </div>
 
-            <div className="pt-3 border-t border-slate-100 flex justify-end gap-2">
+            <div className="pt-3 border-t border-[#DFCBB9] flex justify-end gap-2">
               <Button
                 variant="outlined"
                 size="sm"
@@ -476,29 +477,31 @@ export const TenantListView: React.FC = () => {
           subtitle={`Target: ${selectedTenant.name} (${selectedTenant.id})`}
         >
           <div className="space-y-4 text-xs">
-            <div className="p-3 bg-red-50/90 border border-red-200 text-red-950 rounded-2xl">
-              <p className="font-semibold text-[#BA1A1A]">Destructive Action Warning:</p>
-              <p className="mt-0.5 text-slate-700 leading-relaxed">
+            <div className="p-3.5 bg-[#FDECEC] border border-[#EAB5B5] text-[#7E1414] rounded-[14px]">
+              <p className="font-semibold text-[#A61B1B]">Destructive Action Warning:</p>
+              <p className="mt-0.5 text-[#282820] leading-relaxed">
                 Suspending this tenant revokes API access, blocks telecaller connections, and stops all
                 carrier SIP trunk routing. An immutable audit record will be logged.
               </p>
             </div>
 
+            {actionError && <ErrorBanner message={actionError} />}
+
             <div>
-              <label className="block font-semibold text-slate-800 mb-1">
-                Audit Justification / Suspension Reason <span className="text-[#BA1A1A]">*</span>
+              <label className="block font-semibold text-[#282820] mb-1.5">
+                Audit Justification / Suspension Reason <span className="text-[#A61B1B]">*</span>
               </label>
               <textarea
                 rows={3}
                 placeholder="Specify regulatory violation, billing default, or abuse ticket reference..."
                 value={suspendReason}
                 onChange={(e) => setSuspendReason(e.target.value)}
-                className="w-full p-2.5 bg-[#F8FAF9] border border-slate-300 rounded-xl text-xs focus:outline-none focus:border-[#BA1A1A] focus:bg-white"
+                className="w-full p-3 bg-[#F5E9DF] border border-[#CBB5A4] rounded-[12px] text-xs text-[#282820] placeholder:text-[#84796D] focus:outline-none focus:border-[#A61B1B] focus:bg-[#FAF3ED]"
               />
-              <p className="text-[10px] text-slate-400 mt-1 font-mono">Minimum 5 characters required.</p>
+              <p className="text-[10px] text-[#5C554D] mt-1 font-mono">Minimum 5 characters required.</p>
             </div>
 
-            <div className="pt-3 border-t border-slate-100 flex justify-end gap-2">
+            <div className="pt-3 border-t border-[#DFCBB9] flex justify-end gap-2">
               <Button
                 variant="outlined"
                 size="sm"
@@ -529,15 +532,17 @@ export const TenantListView: React.FC = () => {
           subtitle={`Target: ${selectedTenant.name} (${selectedTenant.id})`}
         >
           <div className="space-y-4 text-xs">
-            <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-950 rounded-2xl">
-              <p className="font-semibold text-emerald-800">Reactivation Notice:</p>
-              <p className="mt-0.5 text-slate-700 leading-relaxed">
+            <div className="p-3.5 bg-[#E5F4E8] border border-[#A7D7B0] text-[#114E1E] rounded-[14px]">
+              <p className="font-semibold text-[#175E17]">Reactivation Notice:</p>
+              <p className="mt-0.5 text-[#282820] leading-relaxed">
                 Reactivating this tenant restores platform access, SIP gateway connectivity, and
                 tenant workflows. An audit record will be logged.
               </p>
             </div>
 
-            <div className="pt-3 border-t border-slate-100 flex justify-end gap-2">
+            {actionError && <ErrorBanner message={actionError} />}
+
+            <div className="pt-3 border-t border-[#DFCBB9] flex justify-end gap-2">
               <Button
                 variant="outlined"
                 size="sm"
@@ -567,6 +572,8 @@ export const TenantListView: React.FC = () => {
         maxWidth="lg"
       >
         <form onSubmit={handleCreateTenant} className="space-y-3.5 text-xs">
+          {actionError && <ErrorBanner message={actionError} />}
+
           <Input
             label="Company / Organization Name"
             required
@@ -582,7 +589,7 @@ export const TenantListView: React.FC = () => {
             placeholder="e.g. Apex Global Logistics Pvt Ltd"
           />
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <Input
               label="Tenant Slug"
               required
@@ -600,13 +607,13 @@ export const TenantListView: React.FC = () => {
             />
           </div>
 
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div>
-              <label className="block text-xs font-semibold text-slate-700 tracking-tight mb-1">Plan</label>
+              <label className="block text-xs font-semibold text-[#282820] tracking-tight mb-1.5">Plan</label>
               <select
                 value={newTenant.plan}
                 onChange={(e) => setNewTenant({ ...newTenant, plan: e.target.value })}
-                className="w-full bg-[#F8FAF9] border border-slate-300 rounded-xl px-3 py-2 text-xs text-slate-800 focus:outline-none focus:border-[#00695C] cursor-pointer"
+                className="w-full bg-[#F5E9DF] border border-[#CBB5A4] rounded-[12px] px-3 py-2.5 text-xs text-[#282820] focus:outline-none focus:border-[#228B22] cursor-pointer"
               >
                 <option value="starter">Starter</option>
                 <option value="growth">Growth</option>
@@ -614,11 +621,11 @@ export const TenantListView: React.FC = () => {
               </select>
             </div>
             <div>
-              <label className="block text-xs font-semibold text-slate-700 tracking-tight mb-1">Region</label>
+              <label className="block text-xs font-semibold text-[#282820] tracking-tight mb-1.5">Region</label>
               <select
                 value={newTenant.region}
                 onChange={(e) => setNewTenant({ ...newTenant, region: e.target.value })}
-                className="w-full bg-[#F8FAF9] border border-slate-300 rounded-xl px-3 py-2 text-xs text-slate-800 focus:outline-none focus:border-[#00695C] font-mono cursor-pointer"
+                className="w-full bg-[#F5E9DF] border border-[#CBB5A4] rounded-[12px] px-3 py-2.5 text-xs text-[#282820] focus:outline-none focus:border-[#228B22] font-mono cursor-pointer"
               >
                 <option value="ap-south-1">ap-south-1 (Mumbai)</option>
                 <option value="ap-southeast-1">ap-southeast-1 (Singapore)</option>
@@ -626,19 +633,19 @@ export const TenantListView: React.FC = () => {
               </select>
             </div>
             <div>
-              <label className="block text-xs font-semibold text-slate-700 tracking-tight mb-1">Seat Limit</label>
+              <label className="block text-xs font-semibold text-[#282820] tracking-tight mb-1.5">Seat Limit</label>
               <input
                 type="number"
                 min={1}
                 max={1000}
                 value={newTenant.maxUsers}
                 onChange={(e) => setNewTenant({ ...newTenant, maxUsers: Number(e.target.value) })}
-                className="w-full bg-[#F8FAF9] border border-slate-300 rounded-xl px-3 py-2 text-xs text-slate-800 focus:outline-none focus:border-[#00695C]"
+                className="w-full bg-[#F5E9DF] border border-[#CBB5A4] rounded-[12px] px-3 py-2.5 text-xs text-[#282820] focus:outline-none focus:border-[#228B22] tabular-nums"
               />
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <Input
               label="Primary Contact Name"
               value={newTenant.contactName}
@@ -654,7 +661,7 @@ export const TenantListView: React.FC = () => {
             />
           </div>
 
-          <div className="pt-3 border-t border-slate-100 flex justify-end gap-2">
+          <div className="pt-3 border-t border-[#DFCBB9] flex justify-end gap-2">
             <Button
               type="button"
               variant="outlined"
@@ -665,7 +672,7 @@ export const TenantListView: React.FC = () => {
             </Button>
             <Button
               type="submit"
-              variant="filled"
+              variant="accent"
               size="sm"
               loading={createLoading}
             >
