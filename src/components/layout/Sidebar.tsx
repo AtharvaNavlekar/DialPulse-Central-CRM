@@ -137,25 +137,25 @@ export const Sidebar: React.FC<SidebarProps> = ({
       {/* Mobile Drawer Backdrop */}
       {isOpen && (
         <div
-          className="fixed inset-0 z-30 bg-[#282820]/50 backdrop-blur-[1px] lg:hidden transition-opacity"
+          className="fixed inset-0 z-30 bg-slate-900/50 backdrop-blur-[1px] lg:hidden transition-opacity"
           onClick={onClose}
           aria-hidden="true"
         />
       )}
 
       <aside
-        className={`fixed inset-y-0 left-0 z-40 w-68 bg-[#175E17] text-white flex flex-col h-screen border-r border-[#114711] select-none shrink-0 transition-transform duration-200 ease-out lg:static lg:translate-x-0 ${
-          isOpen ? 'translate-x-0 shadow-[0_12px_36px_rgba(40,40,32,0.3)]' : '-translate-x-full'
+        className={`fixed inset-y-0 left-0 z-40 w-68 bg-slate-900 text-slate-100 flex flex-col h-screen border-r border-slate-800 select-none shrink-0 transition-transform duration-200 ease-out lg:static lg:translate-x-0 ${
+          isOpen ? 'translate-x-0 shadow-2xl' : '-translate-x-full'
         }`}
       >
         {/* Brand Header */}
-        <div className="p-4 border-b border-[#228B22]/45 bg-[#114711] flex items-center justify-between gap-2">
+        <div className="p-4 border-b border-slate-800 bg-slate-950/60 flex items-center justify-between gap-2">
           <Logo variant="dark" size="sm" showSubtitle={true} />
           {onClose && (
             <button
               type="button"
               onClick={onClose}
-              className="lg:hidden p-1.5 rounded-[10px] text-[#E5C8B2] hover:text-white hover:bg-[#228B22]/40 transition-colors cursor-pointer"
+              className="lg:hidden p-1.5 rounded-[10px] text-slate-400 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer"
               aria-label="Close navigation menu"
             >
               <X className="w-4 h-4" />
@@ -165,7 +165,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
         {/* Navigation List */}
         <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-1" aria-label="Platform navigation">
-          <div className="px-3 pb-1.5 text-[10px] font-bold uppercase tracking-wider text-[#E5C8B2]/80 font-mono">
+          <div className="px-3 pb-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-400 font-mono">
             Core Operations
           </div>
 
@@ -182,15 +182,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
               <button
                 key={item.key}
                 onClick={() => handleNavClick(item.key)}
-                className={`relative w-full flex items-center justify-between px-3 py-2.5 text-xs rounded-[12px] transition-all duration-150 text-left group cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-[#FF6347] ${
+                className={`relative w-full flex items-center justify-between px-3 py-2.5 text-xs rounded-[12px] transition-all duration-150 text-left group cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-400 ${
                   isActive
-                    ? 'bg-[#FAF3ED] text-[#175E17] font-bold shadow-[0_2px_10px_rgba(17,71,17,0.28)]'
-                    : 'text-[#F0F7F0] hover:bg-[#228B22]/55 hover:text-white font-medium'
+                    ? 'bg-[#00695C] text-white font-semibold shadow-sm'
+                    : 'text-slate-300 hover:bg-slate-800/80 hover:text-white font-medium'
                 }`}
               >
                 {isActive && (
                   <span
-                    className="absolute left-1 top-2 bottom-2 w-1 rounded-full bg-[#FF6347]"
+                    className="absolute left-1 top-2 bottom-2 w-1 rounded-full bg-teal-300"
                     aria-hidden="true"
                   />
                 )}
@@ -198,7 +198,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 <div className={`flex items-center gap-2.5 truncate ${isActive ? 'pl-1.5' : ''}`}>
                   <Icon
                     className={`w-4 h-4 shrink-0 transition-colors ${
-                      isActive ? 'text-[#175E17]' : 'text-[#E5C8B2]/90 group-hover:text-white'
+                      isActive ? 'text-white' : 'text-slate-400 group-hover:text-teal-300'
                     }`}
                   />
                   <span className="truncate">{item.label}</span>
@@ -209,11 +209,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     className={`text-[9px] font-mono px-1.5 py-0.5 rounded-[6px] font-bold uppercase tracking-wider shrink-0 ${
                       item.badge === 'REAL'
                         ? isActive
-                          ? 'bg-[#E6F2E6] text-[#175E17] border border-[#228B22]/30'
-                          : 'bg-[#114711] text-[#E5C8B2] border border-[#228B22]/50'
+                          ? 'bg-white/15 text-white border border-white/25'
+                          : 'bg-teal-500/15 text-teal-300 border border-teal-500/25'
                         : isActive
-                        ? 'bg-[#F5E9DF] text-[#5C554D] border border-[#CBB5A4]'
-                        : 'bg-[#114711]/70 text-[#E5C8B2]/75 border border-[#228B22]/30'
+                        ? 'bg-white/15 text-slate-100 border border-white/20'
+                        : 'bg-slate-800 text-slate-400 border border-slate-700'
                     }`}
                   >
                     {item.badge}
@@ -223,11 +223,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
             );
           })}
 
-          {/* Dedicated Impersonation Boundary Entry (10% Tomato Red Accent CTA) */}
+          {/* Dedicated Impersonation Boundary Entry */}
           {canImpersonate && (
             <div className="pt-5 pb-2">
-              <div className="px-3 pb-1.5 text-[10px] font-bold uppercase tracking-wider text-[#E5C8B2]/90 flex items-center gap-1.5 font-mono">
-                <Lock className="w-3 h-3 text-[#FF6347]" />
+              <div className="px-3 pb-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5 font-mono">
+                <Lock className="w-3 h-3 text-amber-400" />
                 <span>Privileged Workflow</span>
               </div>
               <button
@@ -235,17 +235,17 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   onOpenImpersonation();
                   if (onClose) onClose();
                 }}
-                className="w-full flex items-center justify-between px-3 py-2.5 text-xs font-bold rounded-[12px] bg-[#FF6347] text-[#282820] hover:bg-[#F25236] transition-all duration-150 shadow-[0_4px_12px_rgba(40,40,32,0.22)] cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-white"
+                className="w-full flex items-center justify-between px-3 py-2.5 text-xs font-bold rounded-[12px] bg-amber-500/15 text-amber-300 border border-amber-500/35 hover:bg-amber-500/25 hover:text-amber-200 transition-all duration-150 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-400"
               >
                 <div className="flex items-center gap-2 truncate">
-                  <UserCheck2 className="w-4 h-4 text-[#282820] shrink-0" />
+                  <UserCheck2 className="w-4 h-4 text-amber-400 shrink-0" />
                   <span className="truncate">Impersonation Gate</span>
                 </div>
-                <span className="text-[9px] bg-[#282820] text-[#FAF3ED] px-1.5 py-0.5 rounded-[6px] font-bold font-mono shrink-0">
+                <span className="text-[9px] bg-amber-500/20 text-amber-200 border border-amber-400/30 px-1.5 py-0.5 rounded-[6px] font-bold font-mono shrink-0">
                   STEP-UP
                 </span>
               </button>
-              <p className="px-3 pt-1.5 text-[10px] text-[#E5C8B2]/80 leading-tight font-sans">
+              <p className="px-3 pt-1.5 text-[10px] text-slate-400 leading-tight font-sans">
                 Audit-supervised platform staff access
               </p>
             </div>
@@ -253,20 +253,20 @@ export const Sidebar: React.FC<SidebarProps> = ({
         </nav>
 
         {/* Staff Identity Footer */}
-        <div className="p-3.5 border-t border-[#228B22]/45 bg-[#114711]">
+        <div className="p-3.5 border-t border-slate-800 bg-slate-950/60">
           <div className="flex items-center justify-between text-xs">
             <div className="truncate">
               <p className="text-white font-semibold truncate font-display">
                 {user?.fullName || 'Platform Staff'}
               </p>
-              <p className="text-[11px] text-[#E5C8B2]/85 font-mono truncate">{user?.email}</p>
+              <p className="text-[11px] text-slate-400 font-mono truncate">{user?.email}</p>
             </div>
           </div>
           <div className="mt-2.5 flex items-center justify-between gap-2">
-            <span className="text-[10px] font-mono px-2 py-0.5 rounded-[8px] bg-[#175E17] text-[#FAF3ED] border border-[#2E9E2E]/50 font-medium truncate">
+            <span className="text-[10px] font-mono px-2 py-0.5 rounded-[8px] bg-slate-800 text-teal-300 border border-slate-700 font-medium truncate">
               {user?.platformRole}
             </span>
-            <span className="text-[10px] text-[#E5C8B2] font-mono font-semibold whitespace-nowrap">
+            <span className="text-[10px] text-emerald-400 font-mono font-semibold whitespace-nowrap">
               {user?.mfaVerified ? 'MFA VERIFIED' : 'STAFF AUTH'}
             </span>
           </div>

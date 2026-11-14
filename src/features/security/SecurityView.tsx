@@ -76,7 +76,7 @@ export const SecurityView: React.FC = () => {
           <Button
             variant="outlined"
             size="sm"
-            icon={<RefreshCw className={`w-3.5 h-3.5 text-[#282820] ${loading ? 'animate-spin' : ''}`} />}
+            icon={<RefreshCw className={`w-3.5 h-3.5 text-slate-700 ${loading ? 'animate-spin' : ''}`} />}
             onClick={loadEvents}
           >
             Refresh Feed
@@ -96,8 +96,8 @@ export const SecurityView: React.FC = () => {
             description="The SOC threat detection system requires PostgreSQL for alert retention and resolution tracking. Connect DATABASE_URL to view live alerts."
           />
         ) : loading && events.length === 0 ? (
-          <div className="p-12 text-center text-xs text-[#5C554D]">
-            <RefreshCw className="w-6 h-6 animate-spin mx-auto text-[#175E17] mb-2" />
+          <div className="p-12 text-center text-xs text-slate-500">
+            <RefreshCw className="w-6 h-6 animate-spin mx-auto text-[#00695C] mb-2" />
             Querying security threat queue from PostgreSQL...
           </div>
         ) : events.length === 0 ? (
@@ -108,32 +108,32 @@ export const SecurityView: React.FC = () => {
             description="No threat events or rate-limit violations are currently logged in the PostgreSQL security event store."
           />
         ) : (
-          <div className="divide-y divide-[#DFCBB9]">
+          <div className="divide-y divide-slate-100">
             {events.map((ev) => (
               <div
                 key={ev.id}
-                className="p-4 sm:p-5 flex flex-col sm:flex-row sm:items-start justify-between gap-4 hover:bg-[#F5E9DF]/80 transition-colors"
+                className="p-4 sm:p-5 flex flex-col sm:flex-row sm:items-start justify-between gap-4 hover:bg-slate-50/80 transition-colors"
               >
                 <div className="space-y-1.5 flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
                     <StatusChip status={ev.severity} type="severity" size="sm" />
-                    <span className="font-mono font-bold text-[#282820] text-xs break-all">
+                    <span className="font-mono font-bold text-slate-900 text-xs break-all">
                       {ev.eventType}
                     </span>
                     {ev.isResolved ? (
-                      <span className="text-[10px] font-mono text-[#114E1E] bg-[#E5F4E8] px-2 py-0.5 rounded-[8px] border border-[#A7D7B0] font-semibold">
+                      <span className="text-[10px] font-mono text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded-[8px] border border-emerald-200 font-semibold">
                         RESOLVED
                       </span>
                     ) : (
-                      <span className="text-[10px] font-mono text-[#7E1414] bg-[#FDECEC] px-2 py-0.5 rounded-[8px] border border-[#EAB5B5] font-semibold">
+                      <span className="text-[10px] font-mono text-[#BA1A1A] bg-red-50 px-2 py-0.5 rounded-[8px] border border-red-200 font-semibold">
                         ACTIVE ALERT
                       </span>
                     )}
                   </div>
 
-                  <p className="text-xs text-[#282820] leading-relaxed">{ev.description}</p>
+                  <p className="text-xs text-slate-700 leading-relaxed">{ev.description}</p>
 
-                  <div className="text-[11px] font-mono text-[#5C554D] flex flex-wrap items-center gap-2 pt-0.5">
+                  <div className="text-[11px] font-mono text-slate-500 flex flex-wrap items-center gap-2 pt-0.5">
                     <span>Source IP: {ev.sourceIp || 'Internal'}</span>
                     <span>·</span>
                     <span>Actor: {ev.actorIdentifier || 'system'}</span>

@@ -81,8 +81,8 @@ export const AppShell: React.FC = () => {
   };
 
   return (
-    <div className="flex h-screen bg-[#E5C8B2] overflow-hidden text-[#282820]">
-      {/* Sidebar Navigation (30% Forest Green) */}
+    <div className="flex h-screen bg-[#F8FAF9] overflow-hidden text-slate-900">
+      {/* Sidebar Navigation */}
       <Sidebar
         currentTab={currentTab}
         onSelectTab={(tab) => setCurrentTab(tab)}
@@ -91,7 +91,7 @@ export const AppShell: React.FC = () => {
         onClose={() => setMobileMenuOpen(false)}
       />
 
-      {/* Main Content Workspace (60% Oat Milk Foundation) */}
+      {/* Main Content Workspace */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         <TopBar
           currentTabName={currentTab}
@@ -103,7 +103,7 @@ export const AppShell: React.FC = () => {
           onNavigateToSecurity={() => setCurrentTab('security')}
         />
 
-        <main className="flex-1 overflow-y-auto bg-[#E5C8B2]">
+        <main className="flex-1 overflow-y-auto bg-[#F8FAF9]">
           {renderCurrentView()}
         </main>
       </div>

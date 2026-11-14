@@ -1,68 +1,59 @@
 @import "tailwindcss";
 
 @theme {
-  /* Official DialPulse Brand Palette (60 / 30 / 10) */
-  --color-oat-milk: #E5C8B2;
-  --color-forest-green: #228B22;
-  --color-forest-green-deep: #175E17;
-  --color-forest-green-dark: #114711;
-  --color-tomato-red: #FF6347;
-  --color-tomato-red-hover: #F25236;
+  /* Primary */
+  --color-primary: #00695C;
+  --color-on-primary: #FFFFFF;
+  --color-primary-container: #CCE8E1;
+  --color-on-primary-container: #00201B;
 
-  /* Brand Semantic Roles */
-  --color-primary: #E5C8B2;
-  --color-secondary: #228B22;
-  --color-accent: #FF6347;
+  /* Secondary */
+  --color-secondary: #4A635D;
+  --color-on-secondary: #FFFFFF;
+  --color-secondary-container: #CCE8E0;
+  --color-on-secondary-container: #05201A;
 
-  /* Text & Accessibility (WCAG AA+) */
-  --color-text-primary: #282820;
-  --color-text-secondary: #5C554D;
-  --color-text-muted: #6E665D;
-  --color-text-on-green: #FFFFFF;
-  --color-text-on-tomato: #282820;
+  /* Tertiary */
+  --color-tertiary: #006558;
+  --color-on-tertiary: #FFFFFF;
+  --color-tertiary-container: #CCE8E0;
+  --color-on-tertiary-container: #00201B;
 
-  /* Warm Oat Milk Surface Hierarchy */
-  --color-background: #E5C8B2;
-  --color-on-background: #282820;
-  --color-surface: #F5E9DF;
-  --color-surface-raised: #FAF3ED;
-  --color-surface-inset: #ECD9C8;
-  --color-surface-hover: #EEDBCC;
-  --color-on-surface: #282820;
-  --color-on-surface-variant: #5C554D;
+  /* Error */
+  --color-error: #BA1A1A;
+  --color-on-error: #FFFFFF;
+  --color-error-container: #FFDAD6;
+  --color-on-error-container: #410002;
 
-  /* Structural Borders & Focus */
-  --color-border: #CBB5A4;
-  --color-border-subtle: #DFCBB9;
-  --color-border-strong: #B39B88;
-  --color-outline: #CBB5A4;
-  --color-focus: #228B22;
+  /* Background & Surface - High-Contrast Editorial Light Palette */
+  --color-background: #FFFFFF;
+  --color-on-background: #0F172A;
+  --color-surface: #F8FAF9;
+  --color-on-surface: #0F172A;
+  --color-surface-variant: #F1F5F4;
+  --color-on-surface-variant: #475569;
 
-  /* Distinct Semantic Status Colors */
-  --color-success: #176B2A;
-  --color-success-bg: #E5F4E8;
-  --color-success-border: #A7D7B0;
-  --color-warning: #8A4B08;
-  --color-warning-bg: #FEF3DF;
-  --color-warning-border: #E8C48B;
-  --color-error: #A61B1B;
-  --color-error-bg: #FDECEC;
-  --color-error-border: #EAB5B5;
-  --color-info: #165E7D;
-  --color-info-bg: #E8F4FA;
-  --color-info-border: #A8D2E5;
+  /* Outline */
+  --color-outline: #94A3B8;
+  --color-outline-variant: #E2E8F0;
 
-  /* Shape & Depth */
-  --radius-card: 18px;
-  --radius-control: 12px;
-  --shadow-card: 0 4px 18px rgba(40, 40, 32, 0.08);
-  --shadow-elevated: 0 10px 28px rgba(40, 40, 32, 0.12);
+  /* Surface Containers */
+  --color-surface-container-lowest: #FFFFFF;
+  --color-surface-container-low: #F8FAF9;
+  --color-surface-container: #F1F5F4;
+  --color-surface-container-high: #E2E8F0;
+  --color-surface-container-highest: #CBD5E1;
+
+  /* Inverse */
+  --color-inverse-surface: #0F172A;
+  --color-inverse-on-surface: #FFFFFF;
+  --color-inverse-primary: #00695C;
 
   /* Typography */
   --font-display: 'Plus Jakarta Sans', ui-sans-serif, system-ui, sans-serif;
   --font-heading: 'Plus Jakarta Sans', ui-sans-serif, system-ui, sans-serif;
-  --font-sans: 'DM Sans', ui-sans-serif, system-ui, sans-serif;
-  --font-body: 'DM Sans', ui-sans-serif, system-ui, sans-serif;
+  --font-sans: 'Roboto', ui-sans-serif, system-ui, sans-serif;
+  --font-body: 'Roboto', ui-sans-serif, system-ui, sans-serif;
   --font-mono: 'JetBrains Mono', ui-monospace, monospace;
 
   /* Motion */
@@ -72,41 +63,8 @@
 
 :root {
   color-scheme: light;
-  --color-oat-milk: #E5C8B2;
-  --color-forest-green: #228B22;
-  --color-forest-green-deep: #175E17;
-  --color-forest-green-dark: #114711;
-  --color-tomato-red: #FF6347;
-  --color-tomato-red-hover: #F25236;
-
-  --color-primary: var(--color-oat-milk);
-  --color-secondary: var(--color-forest-green);
-  --color-accent: var(--color-tomato-red);
-
-  --color-text-primary: #282820;
-  --color-text-secondary: #5C554D;
-  --color-text-muted: #6E665D;
-  --color-text-on-green: #FFFFFF;
-  --color-text-on-tomato: #282820;
-
-  --color-background: var(--color-oat-milk);
-  --color-surface: #F5E9DF;
-  --color-surface-raised: #FAF3ED;
-  --color-surface-inset: #ECD9C8;
-  --color-surface-hover: #EEDBCC;
-
-  --color-border: #CBB5A4;
-  --color-border-subtle: #DFCBB9;
-  --color-border-strong: #B39B88;
-  --color-focus: var(--color-forest-green);
-
-  --radius-card: 18px;
-  --radius-control: 12px;
-  --shadow-card: 0 4px 18px rgba(40, 40, 32, 0.08);
-  --shadow-elevated: 0 10px 28px rgba(40, 40, 32, 0.12);
-
-  background-color: var(--color-background);
-  color: var(--color-text-primary);
+  background-color: var(--color-surface);
+  color: var(--color-on-background);
   font-family: var(--font-body);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -114,8 +72,8 @@
 
 body {
   font-family: var(--font-body);
-  color: var(--color-text-primary);
-  background-color: var(--color-background);
+  color: var(--color-on-background);
+  background-color: var(--color-surface);
   margin: 0;
   padding: 0;
 }
@@ -137,7 +95,7 @@ code, pre, .font-mono {
   font-variant-numeric: tabular-nums;
 }
 
-/* Warm Oat Milk minimal scrollbar */
+/* Minimal editorial scrollbar */
 ::-webkit-scrollbar {
   width: 7px;
   height: 7px;
@@ -148,12 +106,12 @@ code, pre, .font-mono {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #B39B88;
+  background: #CBD5E1;
   border-radius: 9999px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #8D7664;
+  background: #94A3B8;
 }
 
 @keyframes fadeIn {

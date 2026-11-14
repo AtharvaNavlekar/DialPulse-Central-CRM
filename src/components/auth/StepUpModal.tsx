@@ -55,19 +55,19 @@ export const StepUpModal: React.FC<StepUpModalProps> = ({
       subtitle="15-Minute Elevated Privilege Window"
     >
       <div className="space-y-4">
-        <div className="p-3.5 bg-[#FEF3DF] border border-[#E8C48B] rounded-[14px] flex items-start gap-3">
-          <ShieldCheck className="w-5 h-5 text-[#8A4B08] shrink-0 mt-0.5" />
-          <div className="text-xs text-[#6F3B05] leading-relaxed">
+        <div className="p-3.5 bg-amber-50 border border-amber-200 rounded-[14px] flex items-start gap-3">
+          <ShieldCheck className="w-5 h-5 text-amber-700 shrink-0 mt-0.5" />
+          <div className="text-xs text-amber-900 leading-relaxed">
             <span className="font-display font-bold block mb-0.5">Elevated Privilege Verification</span>
             <p>
-              Authorizing <span className="font-semibold text-[#282820] font-mono">{actionTitle}</span> requires recent second-factor verification (valid for 15 minutes).
+              Authorizing <span className="font-semibold text-slate-900 font-mono">{actionTitle}</span> requires recent second-factor verification (valid for 15 minutes).
             </p>
           </div>
         </div>
 
         {error && (
-          <div className="p-3 bg-[#FDECEC] border border-[#EAB5B5] rounded-[12px] text-[#7E1414] text-xs flex items-start gap-2">
-            <AlertCircle className="w-4 h-4 text-[#A61B1B] shrink-0 mt-0.5" />
+          <div className="p-3 bg-red-50 border border-red-200 rounded-[12px] text-[#BA1A1A] text-xs flex items-start gap-2">
+            <AlertCircle className="w-4 h-4 text-[#BA1A1A] shrink-0 mt-0.5" />
             <span>{error}</span>
           </div>
         )}
@@ -75,7 +75,7 @@ export const StepUpModal: React.FC<StepUpModalProps> = ({
         <form onSubmit={handleSubmit} className="space-y-4">
           {!isRecoveryMode ? (
             <div>
-              <label className="block text-xs font-semibold text-[#282820] mb-1.5">
+              <label className="block text-xs font-semibold text-slate-800 mb-1.5">
                 6-Digit Authenticator Code
               </label>
               <input
@@ -88,15 +88,15 @@ export const StepUpModal: React.FC<StepUpModalProps> = ({
                 value={code}
                 onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
                 placeholder="000000"
-                className="w-full text-center tracking-[0.4em] text-2xl font-mono py-2.5 px-4 rounded-[12px] border border-[#CBB5A4] focus:outline-none focus:border-[#228B22] focus:ring-2 focus:ring-[#228B22]/20 bg-[#F5E9DF] focus:bg-[#FAF3ED] text-[#282820] transition-all"
+                className="w-full text-center tracking-[0.4em] text-2xl font-mono py-2.5 px-4 rounded-[12px] border border-slate-200 focus:outline-none focus:border-[#00695C] focus:ring-2 focus:ring-[#00695C]/15 bg-slate-50 focus:bg-white text-slate-900 transition-all"
               />
-              <p className="text-[11px] text-[#5C554D] mt-1.5 text-center">
+              <p className="text-[11px] text-slate-500 mt-1.5 text-center">
                 Enter your current TOTP code from your authenticator app
               </p>
             </div>
           ) : (
             <div>
-              <label className="block text-xs font-semibold text-[#282820] mb-1.5">
+              <label className="block text-xs font-semibold text-slate-800 mb-1.5">
                 Single-Use Recovery Code
               </label>
               <input
@@ -106,22 +106,22 @@ export const StepUpModal: React.FC<StepUpModalProps> = ({
                 value={recoveryCode}
                 onChange={(e) => setRecoveryCode(e.target.value.toUpperCase().slice(0, 9))}
                 placeholder="XXXX-XXXX"
-                className="w-full text-center font-mono tracking-widest text-lg py-2.5 px-4 rounded-[12px] border border-[#CBB5A4] focus:outline-none focus:border-[#228B22] focus:ring-2 focus:ring-[#228B22]/20 bg-[#F5E9DF] focus:bg-[#FAF3ED] text-[#282820] transition-all"
+                className="w-full text-center font-mono tracking-widest text-lg py-2.5 px-4 rounded-[12px] border border-slate-200 focus:outline-none focus:border-[#00695C] focus:ring-2 focus:ring-[#00695C]/15 bg-slate-50 focus:bg-white text-slate-900 transition-all"
               />
-              <p className="text-[11px] text-[#5C554D] mt-1.5 text-center">
+              <p className="text-[11px] text-slate-500 mt-1.5 text-center">
                 Enter an unconsumed 8-character recovery backup code
               </p>
             </div>
           )}
 
-          <div className="pt-3 flex flex-wrap items-center justify-between gap-2 border-t border-[#DFCBB9]">
+          <div className="pt-3 flex flex-wrap items-center justify-between gap-2 border-t border-slate-200">
             <button
               type="button"
               onClick={() => {
                 setIsRecoveryMode(!isRecoveryMode);
                 setError(null);
               }}
-              className="text-[#175E17] hover:underline text-xs flex items-center gap-1.5 font-semibold cursor-pointer"
+              className="text-[#00695C] hover:underline text-xs flex items-center gap-1.5 font-semibold cursor-pointer"
             >
               <KeyRound className="w-3.5 h-3.5" />
               <span>{isRecoveryMode ? 'Use Authenticator App' : 'Use Recovery Code'}</span>
@@ -138,7 +138,7 @@ export const StepUpModal: React.FC<StepUpModalProps> = ({
               </Button>
               <Button
                 type="submit"
-                variant="accent"
+                variant="filled"
                 size="sm"
                 loading={loading}
                 disabled={!isRecoveryMode ? code.length !== 6 : recoveryCode.length < 8}

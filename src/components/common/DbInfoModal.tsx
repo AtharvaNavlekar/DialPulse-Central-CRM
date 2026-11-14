@@ -36,13 +36,13 @@ export const DbInfoModal: React.FC<DbInfoModalProps> = ({ isOpen, onClose }) => 
       subtitle="Authoritative Database Architecture & Connection State"
       maxWidth="xl"
     >
-      <div className="space-y-4 text-xs text-[#282820]">
+      <div className="space-y-4 text-xs text-slate-900">
         {/* Status card */}
         <div
           className={`p-4 rounded-[14px] border flex items-start gap-3 ${
             health?.database?.reachable
-              ? 'bg-[#E5F4E8] border-[#A7D7B0] text-[#114E1E]'
-              : 'bg-[#FEF3DF] border-[#E8C48B] text-[#6F3B05]'
+              ? 'bg-emerald-50 border-emerald-200 text-emerald-900'
+              : 'bg-amber-50 border-amber-200 text-amber-900'
           }`}
         >
           <Database className="w-5 h-5 shrink-0 mt-0.5" />
@@ -52,12 +52,12 @@ export const DbInfoModal: React.FC<DbInfoModalProps> = ({ isOpen, onClose }) => 
                 ? 'PostgreSQL Instance Connected & Active'
                 : 'DATABASE_URL Unconfigured / Standalone Mode'}
             </div>
-            <p className="text-[#282820] leading-relaxed">
+            <p className="text-slate-700 leading-relaxed">
               {health?.database?.message ||
                 'Running without external PostgreSQL. Supply DATABASE_URL for live persistence.'}
             </p>
             {health?.database?.latencyMs != null && (
-              <p className="font-mono text-[10px] text-[#175E17] font-semibold tabular-nums">
+              <p className="font-mono text-[10px] text-[#00695C] font-semibold tabular-nums">
                 Connection Latency: {health.database.latencyMs}ms
               </p>
             )}
@@ -66,7 +66,7 @@ export const DbInfoModal: React.FC<DbInfoModalProps> = ({ isOpen, onClose }) => 
 
         {/* Database Tables Registered in Drizzle */}
         <div className="space-y-2">
-          <h4 className="font-display font-bold text-[#282820]">
+          <h4 className="font-display font-bold text-slate-900">
             Registered Schema Entities (Drizzle ORM):
           </h4>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 font-mono text-[11px]">
@@ -78,9 +78,9 @@ export const DbInfoModal: React.FC<DbInfoModalProps> = ({ isOpen, onClose }) => 
               { name: 'audit_logs', desc: 'Immutable cryptographic logs' },
               { name: 'security_events', desc: 'SOC alerts & SIP trunk limits' },
             ].map((tbl) => (
-              <div key={tbl.name} className="p-2.5 bg-[#F5E9DF] rounded-[12px] border border-[#DFCBB9]">
-                <span className="font-bold text-[#175E17]">{tbl.name}</span>
-                <p className="text-[10px] text-[#5C554D] font-sans mt-0.5">{tbl.desc}</p>
+              <div key={tbl.name} className="p-2.5 bg-slate-50 rounded-[12px] border border-slate-200">
+                <span className="font-bold text-[#00695C]">{tbl.name}</span>
+                <p className="text-[10px] text-slate-500 font-sans mt-0.5">{tbl.desc}</p>
               </div>
             ))}
           </div>
@@ -88,22 +88,22 @@ export const DbInfoModal: React.FC<DbInfoModalProps> = ({ isOpen, onClose }) => 
 
         {/* Connection Snippet */}
         <div>
-          <div className="flex items-center justify-between text-[#282820] font-semibold mb-1.5">
+          <div className="flex items-center justify-between text-slate-800 font-semibold mb-1.5">
             <span className="font-display">Environment Variable Requirement:</span>
             <button
               onClick={copyConfig}
-              className="inline-flex items-center gap-1 text-[11px] text-[#175E17] hover:text-[#114711] font-mono cursor-pointer"
+              className="inline-flex items-center gap-1 text-[11px] text-[#00695C] hover:text-[#004D40] font-mono cursor-pointer"
             >
-              {copied ? <Check className="w-3.5 h-3.5 text-[#176B2A]" /> : <Copy className="w-3.5 h-3.5" />}
+              {copied ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
               <span>{copied ? 'Copied' : 'Copy Example'}</span>
             </button>
           </div>
-          <pre className="p-3 bg-[#F5E9DF] text-[#282820] border border-[#CBB5A4] rounded-[12px] font-mono text-[11px] overflow-x-auto">
+          <pre className="p-3 bg-slate-50 text-slate-800 border border-slate-200 rounded-[12px] font-mono text-[11px] overflow-x-auto">
             DATABASE_URL="postgresql://postgres:password@localhost:5432/dialpulse_central_crm"
           </pre>
         </div>
 
-        <div className="pt-3 border-t border-[#DFCBB9] flex justify-end">
+        <div className="pt-3 border-t border-slate-200 flex justify-end">
           <Button
             variant="filled"
             size="sm"

@@ -93,21 +93,21 @@ export const MfaEnrollmentModal: React.FC<MfaEnrollmentModalProps> = ({
       subtitle="RFC 6238 TOTP & Single-Use Recovery Credentials"
       maxWidth="lg"
     >
-      <div className="space-y-4 text-xs text-[#282820]">
+      <div className="space-y-4 text-xs text-slate-900">
         {error && (
-          <div className="p-3 bg-[#FDECEC] border border-[#EAB5B5] rounded-[12px] text-[#7E1414] flex items-start gap-2">
-            <AlertCircle className="w-4 h-4 text-[#A61B1B] shrink-0 mt-0.5" />
+          <div className="p-3 bg-red-50 border border-red-200 rounded-[12px] text-[#BA1A1A] flex items-start gap-2">
+            <AlertCircle className="w-4 h-4 text-[#BA1A1A] shrink-0 mt-0.5" />
             <span>{error}</span>
           </div>
         )}
 
         {successMsg ? (
-          <div className="p-5 bg-[#E5F4E8] border border-[#A7D7B0] rounded-[16px] space-y-3 text-[#114E1E]">
+          <div className="p-5 bg-emerald-50 border border-emerald-200 rounded-[16px] space-y-3 text-emerald-900">
             <div className="flex items-center gap-2.5 font-display font-bold text-sm">
-              <CheckCircle2 className="w-5 h-5 text-[#176B2A]" />
+              <CheckCircle2 className="w-5 h-5 text-emerald-700" />
               <span>MFA Enrollment Confirmed</span>
             </div>
-            <p className="text-xs leading-relaxed text-[#282820]">{successMsg}</p>
+            <p className="text-xs leading-relaxed text-slate-700">{successMsg}</p>
             <div className="pt-2 flex justify-end">
               <Button variant="filled" size="sm" onClick={onClose}>
                 Done
@@ -115,64 +115,64 @@ export const MfaEnrollmentModal: React.FC<MfaEnrollmentModalProps> = ({
             </div>
           </div>
         ) : loadingEnroll ? (
-          <div className="py-10 text-center text-[#5C554D] font-mono">
+          <div className="py-10 text-center text-slate-500 font-mono">
             Generating AES-256-GCM authenticator key and recovery codes...
           </div>
         ) : enrollData ? (
           <form onSubmit={handleVerify} className="space-y-4">
             {/* Step 1: Secret Key & URI */}
-            <div className="p-4 bg-[#F5E9DF] border border-[#DFCBB9] rounded-[14px] space-y-2.5">
+            <div className="p-4 bg-slate-50 border border-slate-200 rounded-[14px] space-y-2.5">
               <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2 font-display font-bold text-[#282820]">
-                  <ShieldCheck className="w-4 h-4 text-[#175E17]" />
+                <div className="flex items-center gap-2 font-display font-bold text-slate-900">
+                  <ShieldCheck className="w-4 h-4 text-[#00695C]" />
                   <span>1. Add Secret to Authenticator App</span>
                 </div>
                 <button
                   type="button"
                   onClick={handleCopySecret}
-                  className="inline-flex items-center gap-1 text-[11px] font-mono font-semibold text-[#175E17] hover:underline cursor-pointer"
+                  className="inline-flex items-center gap-1 text-[11px] font-mono font-semibold text-[#00695C] hover:underline cursor-pointer"
                 >
                   {copiedSecret ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
                   <span>{copiedSecret ? 'Copied' : 'Copy Key'}</span>
                 </button>
               </div>
 
-              <div className="p-2.5 bg-[#FAF3ED] border border-[#CBB5A4] rounded-[10px] font-mono text-xs font-bold tracking-wider text-center select-all text-[#282820]">
+              <div className="p-2.5 bg-white border border-slate-200 rounded-[10px] font-mono text-xs font-bold tracking-wider text-center select-all text-slate-900">
                 {enrollData.secret}
               </div>
 
-              <p className="text-[11px] text-[#5C554D] leading-relaxed">
+              <p className="text-[11px] text-slate-600 leading-relaxed">
                 Enter this Base32 key into Google Authenticator, 1Password, or Authy, or use the provisioning URI:
               </p>
-              <div className="p-2 bg-[#ECD9C8]/70 rounded-[8px] font-mono text-[10px] text-[#5C554D] break-all select-all">
+              <div className="p-2 bg-slate-100 rounded-[8px] font-mono text-[10px] text-slate-600 break-all select-all">
                 {enrollData.provisioningUri}
               </div>
             </div>
 
             {/* Step 2: Recovery Codes */}
-            <div className="p-4 bg-[#F5E9DF] border border-[#DFCBB9] rounded-[14px] space-y-2.5">
+            <div className="p-4 bg-slate-50 border border-slate-200 rounded-[14px] space-y-2.5">
               <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2 font-display font-bold text-[#282820]">
-                  <KeyRound className="w-4 h-4 text-[#8A4B08]" />
+                <div className="flex items-center gap-2 font-display font-bold text-slate-900">
+                  <KeyRound className="w-4 h-4 text-amber-700" />
                   <span>2. Store Single-Use Recovery Codes</span>
                 </div>
                 <button
                   type="button"
                   onClick={handleCopyRecoveryCodes}
-                  className="inline-flex items-center gap-1 text-[11px] font-mono font-semibold text-[#175E17] hover:underline cursor-pointer"
+                  className="inline-flex items-center gap-1 text-[11px] font-mono font-semibold text-[#00695C] hover:underline cursor-pointer"
                 >
                   {copiedCodes ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
                   <span>{copiedCodes ? 'Copied All' : 'Copy All'}</span>
                 </button>
               </div>
-              <p className="text-[11px] text-[#5C554D]">
+              <p className="text-[11px] text-slate-600">
                 Only SHA-256 hashes are stored server-side. Save these backup codes in your password manager before confirming.
               </p>
               <div className="grid grid-cols-2 gap-1.5 font-mono text-[11px]">
                 {enrollData.recoveryCodes.map((rc) => (
                   <div
                     key={rc}
-                    className="px-2.5 py-1.5 bg-[#FAF3ED] border border-[#CBB5A4] rounded-[8px] text-center font-semibold text-[#282820] tabular-nums"
+                    className="px-2.5 py-1.5 bg-white border border-slate-200 rounded-[8px] text-center font-semibold text-slate-900 tabular-nums"
                   >
                     {rc}
                   </div>
@@ -182,7 +182,7 @@ export const MfaEnrollmentModal: React.FC<MfaEnrollmentModalProps> = ({
 
             {/* Step 3: Verify Initial TOTP */}
             <div className="space-y-2">
-              <label className="block text-xs font-semibold text-[#282820]">
+              <label className="block text-xs font-semibold text-slate-800">
                 3. Enter 6-Digit Code to Activate
               </label>
               <input
@@ -194,17 +194,17 @@ export const MfaEnrollmentModal: React.FC<MfaEnrollmentModalProps> = ({
                 value={code}
                 onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
                 placeholder="000000"
-                className="w-full text-center tracking-[0.45em] text-xl font-mono py-2.5 px-4 rounded-[12px] border border-[#CBB5A4] bg-[#F5E9DF] text-[#282820] focus:outline-none focus:bg-[#FAF3ED] focus:border-[#228B22] focus:ring-2 focus:ring-[#228B22]/20 transition-all"
+                className="w-full text-center tracking-[0.45em] text-xl font-mono py-2.5 px-4 rounded-[12px] border border-slate-200 bg-slate-50 text-slate-900 focus:outline-none focus:bg-white focus:border-[#00695C] focus:ring-2 focus:ring-[#00695C]/15 transition-all"
               />
             </div>
 
-            <div className="pt-3 border-t border-[#DFCBB9] flex justify-end gap-2">
+            <div className="pt-3 border-t border-slate-200 flex justify-end gap-2">
               <Button type="button" variant="outlined" size="sm" onClick={onClose}>
                 Cancel
               </Button>
               <Button
                 type="submit"
-                variant="accent"
+                variant="filled"
                 size="sm"
                 loading={submitting}
                 disabled={code.length !== 6}

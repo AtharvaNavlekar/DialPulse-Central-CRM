@@ -42,27 +42,27 @@ export const Modal: React.FC<ModalProps> = ({
     <div className="fixed inset-0 z-50 overflow-y-auto" role="dialog" aria-modal="true">
       {/* Backdrop */}
       <div
-        className="fixed inset-0 bg-[#282820]/45 backdrop-blur-[2px] transition-opacity duration-200"
+        className="fixed inset-0 bg-slate-900/45 backdrop-blur-[2px] transition-opacity duration-200"
         onClick={onClose}
       />
 
       <div className="flex min-h-full items-center justify-center p-4">
         <div
-          className={`relative w-full ${maxWidthClass} bg-[#FAF3ED] rounded-[20px] border border-[#CBB5A4] shadow-[0_16px_40px_rgba(40,40,32,0.18)] overflow-hidden transition-all duration-200 text-[#282820]`}
+          className={`relative w-full ${maxWidthClass} bg-white rounded-[20px] border border-slate-200 shadow-2xl overflow-hidden transition-all duration-200 text-slate-900`}
         >
           {/* Header */}
-          <div className="flex items-center justify-between px-6 py-4 border-b border-[#DFCBB9] bg-[#F5E9DF]">
+          <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 bg-slate-50/80">
             <div className="min-w-0 pr-3">
-              <h3 className="text-base font-display font-bold text-[#282820] tracking-tight truncate">
+              <h3 className="text-base font-display font-bold text-slate-900 tracking-tight truncate">
                 {title}
               </h3>
               {subtitle && (
-                <p className="text-xs text-[#5C554D] font-mono mt-0.5 truncate">{subtitle}</p>
+                <p className="text-xs text-slate-500 font-mono mt-0.5 truncate">{subtitle}</p>
               )}
             </div>
             <button
               onClick={onClose}
-              className="text-[#5C554D] hover:text-[#282820] p-1.5 rounded-[10px] hover:bg-[#E5C8B2]/70 transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-[#228B22]"
+              className="text-slate-400 hover:text-slate-700 p-1.5 rounded-[10px] hover:bg-slate-200/60 transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-[#00695C]"
               aria-label="Close dialog"
             >
               <X className="w-4 h-4" />

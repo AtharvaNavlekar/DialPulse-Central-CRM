@@ -22,23 +22,23 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
     ref
   ) => {
     const baseStyles =
-      'inline-flex items-center justify-center font-semibold rounded-[12px] transition-all duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#228B22] focus-visible:ring-offset-2 focus-visible:ring-offset-[#FAF3ED] disabled:opacity-45 disabled:pointer-events-none relative overflow-hidden group select-none cursor-pointer whitespace-nowrap shrink-0';
+      'inline-flex items-center justify-center font-semibold rounded-[12px] transition-all duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#00695C] focus-visible:ring-offset-2 focus-visible:ring-offset-white disabled:opacity-45 disabled:pointer-events-none relative overflow-hidden group select-none cursor-pointer whitespace-nowrap shrink-0';
 
     const variants = {
       filled:
-        'bg-[#175E17] text-white border border-[#175E17] hover:bg-[#114711] hover:border-[#114711] shadow-[0_2px_8px_rgba(23,94,23,0.18)] active:scale-[0.98]',
+        'bg-[#00695C] text-white border border-[#00695C] hover:bg-[#004D40] hover:border-[#004D40] shadow-xs active:scale-[0.98]',
       accent:
-        'bg-[#FF6347] text-[#282820] border border-[#E65137] hover:bg-[#F25236] shadow-[0_2px_10px_rgba(255,99,71,0.22)] active:scale-[0.98]',
+        'bg-[#00695C] text-white border border-[#00695C] hover:bg-[#004D40] hover:border-[#004D40] shadow-xs active:scale-[0.98]',
       tonal:
-        'bg-[#E6F2E6] text-[#114711] border border-[#228B22]/30 hover:bg-[#D6EBD6] active:scale-[0.98]',
+        'bg-[#CCE8E1]/60 text-[#004D40] border border-[#00695C]/25 hover:bg-[#CCE8E1] active:scale-[0.98]',
       elevated:
-        'bg-[#FAF3ED] text-[#282820] border border-[#CBB5A4] shadow-[0_2px_8px_rgba(40,40,32,0.06)] hover:bg-[#F5E9DF] hover:border-[#B39B88] active:scale-[0.98]',
+        'bg-white text-slate-800 border border-slate-200 shadow-xs hover:bg-slate-50 hover:border-slate-300 active:scale-[0.98]',
       outlined:
-        'border border-[#CBB5A4] bg-[#F5E9DF]/65 hover:bg-[#ECD9C8] hover:border-[#B39B88] text-[#282820] active:scale-[0.98]',
+        'border border-slate-200 bg-white hover:bg-slate-50 hover:border-slate-300 text-slate-700 active:scale-[0.98]',
       text:
-        'bg-transparent text-[#175E17] hover:bg-[#228B22]/10 px-3',
+        'bg-transparent text-[#00695C] hover:bg-teal-50 px-3',
       destructive:
-        'bg-[#A61B1B] text-white border border-[#A61B1B] hover:bg-[#871414] shadow-[0_2px_8px_rgba(166,27,27,0.18)] active:scale-[0.98]',
+        'bg-[#BA1A1A] text-white border border-[#BA1A1A] hover:bg-red-800 shadow-xs active:scale-[0.98]',
     };
 
     const sizes = {

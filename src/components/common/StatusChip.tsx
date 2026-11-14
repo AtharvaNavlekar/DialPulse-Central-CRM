@@ -9,84 +9,84 @@ interface StatusChipProps {
 export const StatusChip: React.FC<StatusChipProps> = ({ status, type = 'tenant', size = 'sm' }) => {
   const s = String(status).toLowerCase();
 
-  let styles = 'bg-[#F5E9DF] text-[#5C554D] border-[#CBB5A4]';
-  let dotColor = 'bg-[#6E665D]';
+  let styles = 'bg-slate-100 text-slate-600 border-slate-200';
+  let dotColor = 'bg-slate-400';
   let label = status;
 
   if (type === 'tenant') {
     if (s === 'active') {
-      styles = 'bg-[#E5F4E8] text-[#114E1E] border-[#A7D7B0]';
-      dotColor = 'bg-[#228B22]';
+      styles = 'bg-emerald-50 text-emerald-800 border-emerald-200';
+      dotColor = 'bg-emerald-600';
       label = 'Active';
     } else if (s === 'suspended') {
-      styles = 'bg-[#FDECEC] text-[#7E1414] border-[#EAB5B5]';
-      dotColor = 'bg-[#A61B1B]';
+      styles = 'bg-red-50 text-[#BA1A1A] border-red-200';
+      dotColor = 'bg-[#BA1A1A]';
       label = 'Suspended';
     } else if (s === 'provisioning') {
-      styles = 'bg-[#FEF3DF] text-[#6F3B05] border-[#E8C48B]';
-      dotColor = 'bg-[#D97706]';
+      styles = 'bg-amber-50 text-amber-800 border-amber-200';
+      dotColor = 'bg-amber-500';
       label = 'Provisioning';
     } else if (s === 'deprovisioned') {
-      styles = 'bg-[#ECD9C8] text-[#5C554D] border-[#CBB5A4]';
-      dotColor = 'bg-[#6E665D]';
+      styles = 'bg-slate-100 text-slate-600 border-slate-200';
+      dotColor = 'bg-slate-400';
       label = 'Deprovisioned';
     }
   } else if (type === 'severity') {
     if (s === 'critical') {
-      styles = 'bg-[#FDECEC] text-[#7E1414] border-[#EAB5B5] font-semibold';
-      dotColor = 'bg-[#A61B1B]';
+      styles = 'bg-red-50 text-[#BA1A1A] border-red-200 font-semibold';
+      dotColor = 'bg-[#BA1A1A]';
       label = 'Critical';
     } else if (s === 'high') {
-      styles = 'bg-[#FFEAE6] text-[#282820] border-[#FF6347] font-semibold';
-      dotColor = 'bg-[#FF6347]';
+      styles = 'bg-orange-50 text-orange-800 border-orange-200 font-semibold';
+      dotColor = 'bg-orange-500';
       label = 'High';
     } else if (s === 'medium') {
-      styles = 'bg-[#FEF3DF] text-[#6F3B05] border-[#E8C48B]';
-      dotColor = 'bg-[#B45309]';
+      styles = 'bg-amber-50 text-amber-800 border-amber-200';
+      dotColor = 'bg-amber-500';
       label = 'Medium';
     } else {
-      styles = 'bg-[#E8F4FA] text-[#0F455C] border-[#A8D2E5]';
-      dotColor = 'bg-[#165E7D]';
+      styles = 'bg-sky-50 text-sky-800 border-sky-200';
+      dotColor = 'bg-sky-600';
       label = 'Low';
     }
   } else if (type === 'audit') {
     if (s === 'success') {
-      styles = 'bg-[#E5F4E8] text-[#114E1E] border-[#A7D7B0]';
-      dotColor = 'bg-[#228B22]';
+      styles = 'bg-emerald-50 text-emerald-800 border-emerald-200';
+      dotColor = 'bg-emerald-600';
       label = 'SUCCESS';
     } else if (s === 'denied') {
-      styles = 'bg-[#FEF3DF] text-[#6F3B05] border-[#E8C48B] font-semibold';
-      dotColor = 'bg-[#B45309]';
+      styles = 'bg-amber-50 text-amber-800 border-amber-200 font-semibold';
+      dotColor = 'bg-amber-600';
       label = 'DENIED (403)';
     } else {
-      styles = 'bg-[#FDECEC] text-[#7E1414] border-[#EAB5B5]';
-      dotColor = 'bg-[#A61B1B]';
+      styles = 'bg-red-50 text-[#BA1A1A] border-red-200';
+      dotColor = 'bg-[#BA1A1A]';
       label = 'FAILED';
     }
   } else if (type === 'role') {
     if (s === 'platform_admin') {
-      styles = 'bg-[#FFEAE6] text-[#282820] border-[#FF6347] font-semibold';
-      dotColor = 'bg-[#FF6347]';
+      styles = 'bg-teal-50 text-[#00695C] border-teal-200 font-semibold';
+      dotColor = 'bg-[#00695C]';
       label = 'Platform Admin';
     } else if (s === 'platform_support') {
-      styles = 'bg-[#E6F2E6] text-[#114711] border-[#228B22]/40 font-semibold';
-      dotColor = 'bg-[#228B22]';
+      styles = 'bg-sky-50 text-sky-800 border-sky-200 font-semibold';
+      dotColor = 'bg-sky-600';
       label = 'Platform Support';
     } else if (s === 'platform_security') {
-      styles = 'bg-[#FEF3DF] text-[#6F3B05] border-[#E8C48B] font-semibold';
-      dotColor = 'bg-[#8A4B08]';
+      styles = 'bg-amber-50 text-amber-800 border-amber-200 font-semibold';
+      dotColor = 'bg-amber-600';
       label = 'Platform Security';
     }
   } else if (type === 'system') {
     if (s === 'connected' || s === 'healthy') {
-      styles = 'bg-[#E5F4E8] text-[#114E1E] border-[#A7D7B0]';
-      dotColor = 'bg-[#228B22]';
+      styles = 'bg-emerald-50 text-emerald-800 border-emerald-200';
+      dotColor = 'bg-emerald-600';
     } else if (s === 'warning' || s === 'awaiting_database') {
-      styles = 'bg-[#FEF3DF] text-[#6F3B05] border-[#E8C48B]';
-      dotColor = 'bg-[#B45309]';
+      styles = 'bg-amber-50 text-amber-800 border-amber-200';
+      dotColor = 'bg-amber-500';
     } else {
-      styles = 'bg-[#FDECEC] text-[#7E1414] border-[#EAB5B5]';
-      dotColor = 'bg-[#A61B1B]';
+      styles = 'bg-red-50 text-[#BA1A1A] border-red-200';
+      dotColor = 'bg-[#BA1A1A]';
     }
   }
 

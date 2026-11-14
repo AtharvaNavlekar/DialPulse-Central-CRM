@@ -2,7 +2,7 @@ import React from 'react';
 
 export interface BadgeProps {
   children: React.ReactNode;
-  variant?: 'primary' | 'green' | 'accent' | 'secondary' | 'outline' | 'oat' | 'amber' | 'rose' | 'emerald';
+  variant?: 'primary' | 'teal' | 'accent' | 'secondary' | 'outline' | 'neutral' | 'amber' | 'rose' | 'emerald';
   size?: 'sm' | 'md';
   icon?: React.ReactNode;
   className?: string;
@@ -10,21 +10,21 @@ export interface BadgeProps {
 
 export const Badge: React.FC<BadgeProps> = ({
   children,
-  variant = 'oat',
+  variant = 'neutral',
   size = 'sm',
   icon,
   className = '',
 }) => {
   const variants = {
-    primary: 'bg-[#175E17] text-white border-transparent',
-    green: 'bg-[#E6F2E6] text-[#175E17] border-[#228B22]/30',
-    accent: 'bg-[#FF6347] text-[#282820] border-[#E65137]',
-    secondary: 'bg-[#E5C8B2] text-[#282820] border-[#CBB5A4]',
-    outline: 'bg-transparent text-[#282820] border-[#CBB5A4]',
-    oat: 'bg-[#F5E9DF] text-[#5C554D] border-[#CBB5A4]',
-    amber: 'bg-[#FEF3DF] text-[#8A4B08] border-[#E8C48B]',
-    rose: 'bg-[#FDECEC] text-[#A61B1B] border-[#EAB5B5]',
-    emerald: 'bg-[#E5F4E8] text-[#176B2A] border-[#A7D7B0]',
+    primary: 'bg-[#00695C] text-white border-transparent',
+    teal: 'bg-teal-50 text-[#00695C] border-teal-200',
+    accent: 'bg-[#00695C] text-white border-transparent',
+    secondary: 'bg-slate-100 text-slate-800 border-slate-200',
+    outline: 'bg-transparent text-slate-700 border-slate-300',
+    neutral: 'bg-slate-100 text-slate-600 border-slate-200',
+    amber: 'bg-amber-50 text-amber-800 border-amber-200',
+    rose: 'bg-red-50 text-[#BA1A1A] border-red-200',
+    emerald: 'bg-emerald-50 text-emerald-800 border-emerald-200',
   };
 
   const sizes = {
