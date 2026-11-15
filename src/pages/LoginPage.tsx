@@ -16,6 +16,7 @@ export const LoginPage: React.FC = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
+  const [cookieBlockedError, setCookieBlockedError] = useState(false);
 
   // MFA Challenge State
   const [mfaChallenge, setMfaChallenge] = useState<{
@@ -41,6 +42,7 @@ export const LoginPage: React.FC = () => {
     e.preventDefault();
     setLoading(true);
     setLocalError(null);
+    setCookieBlockedError(false);
     try {
       const res = await login(email, password);
       if ('mfaRequired' in res && res.mfaRequired) {
@@ -55,6 +57,7 @@ export const LoginPage: React.FC = () => {
       }
     } catch (err: any) {
       setLocalError(err.message || 'Platform staff authentication failed');
+      setCookieBlockedError(err?.code === 'COOKIE_BLOCKED_IN_FRAME');
     } finally {
       setLoading(false);
     }
@@ -66,6 +69,7 @@ export const LoginPage: React.FC = () => {
 
     setLoading(true);
     setLocalError(null);
+    setCookieBlockedError(false);
     try {
       if (isRecoveryMode) {
         await verifyMfaRecovery(mfaChallenge.token, recoveryCode.trim());
@@ -74,6 +78,7 @@ export const LoginPage: React.FC = () => {
       }
     } catch (err: any) {
       setLocalError(err.message || 'MFA verification failed');
+      setCookieBlockedError(err?.code === 'COOKIE_BLOCKED_IN_FRAME');
       if (typeof err.remainingAttempts === 'number') {
         setRemainingAttempts(err.remainingAttempts);
       }
@@ -132,6 +137,16 @@ export const LoginPage: React.FC = () => {
               <AlertCircle className="w-4 h-4 text-[#BA1A1A] shrink-0 mt-0.5" />
               <div className="flex-1 min-w-0">
                 <p className="text-xs leading-snug font-medium">{localError}</p>
+                {cookieBlockedError && (
+                  <a
+                    href={typeof window !== 'undefined' ? window.location.href : '/login'}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-block mt-1.5 text-[11px] font-bold text-[#00695C] hover:underline"
+                  >
+                    Open in Dedicated Browser Tab →
+                  </a>
+                )}
                 {remainingAttempts !== null && remainingAttempts > 0 && (
                   <p className="text-[11px] text-[#BA1A1A] mt-1 font-semibold tabular-nums">
                     Remaining attempts before temporary lockout: {remainingAttempts}

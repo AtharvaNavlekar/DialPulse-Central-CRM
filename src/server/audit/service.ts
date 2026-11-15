@@ -12,7 +12,19 @@ export interface AuditEventParams {
     actingAs?: { tenantId: string; userId: string; userEmail: string };
   };
   action: string;
-  targetType: 'tenant' | 'session' | 'role' | 'impersonation' | 'security' | 'staff' | 'system' | 'auth';
+  targetType:
+    | 'tenant'
+    | 'session'
+    | 'role'
+    | 'impersonation'
+    | 'security'
+    | 'staff'
+    | 'system'
+    | 'auth'
+    | 'billing'
+    | 'feature'
+    | 'infrastructure'
+    | 'support';
   targetId?: string | null;
   result: 'success' | 'denied' | 'failed';
   ipAddress?: string;

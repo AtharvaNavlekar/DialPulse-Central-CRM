@@ -24,6 +24,12 @@ export function isHttpsRequest(req?: Request): boolean {
     return true;
   }
 
+  const forwarded = req.headers.forwarded;
+  const forwardedStr = Array.isArray(forwarded) ? forwarded[0] : forwarded;
+  if (typeof forwardedStr === 'string' && /proto=https/i.test(forwardedStr)) {
+    return true;
+  }
+
   const origin = req.headers.origin;
   if (typeof origin === 'string' && origin.toLowerCase().startsWith('https://')) {
     return true;
@@ -44,6 +50,7 @@ export function getAccessTokenCookieOptions(req?: Request) {
     httpOnly: true,
     secure: isProd || isHttps,
     sameSite: (isHttps ? 'none' : 'lax') as 'none' | 'lax',
+    ...(isHttps ? { partitioned: true } : {}),
     path: '/',
     maxAge: COOKIE_EXPIRY_MS.ACCESS_TOKEN,
   };
@@ -56,6 +63,7 @@ export function getRefreshTokenCookieOptions(req?: Request) {
     httpOnly: true,
     secure: isProd || isHttps,
     sameSite: (isHttps ? 'none' : 'lax') as 'none' | 'lax',
+    ...(isHttps ? { partitioned: true } : {}),
     path: '/',
     maxAge: COOKIE_EXPIRY_MS.REFRESH_TOKEN,
   };
@@ -68,6 +76,7 @@ export function getClearCookieOptions(req?: Request) {
     httpOnly: true,
     secure: isProd || isHttps,
     sameSite: (isHttps ? 'none' : 'lax') as 'none' | 'lax',
+    ...(isHttps ? { partitioned: true } : {}),
     path: '/',
   };
 }

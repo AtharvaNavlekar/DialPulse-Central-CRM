@@ -75,10 +75,11 @@ export const StepUpModal: React.FC<StepUpModalProps> = ({
         <form onSubmit={handleSubmit} className="space-y-4">
           {!isRecoveryMode ? (
             <div>
-              <label className="block text-xs font-semibold text-slate-800 mb-1.5">
+              <label htmlFor="stepup-totp-code" className="block text-xs font-semibold text-slate-800 mb-1.5">
                 6-Digit Authenticator Code
               </label>
               <input
+                id="stepup-totp-code"
                 type="text"
                 inputMode="numeric"
                 pattern="[0-9]*"
@@ -96,10 +97,11 @@ export const StepUpModal: React.FC<StepUpModalProps> = ({
             </div>
           ) : (
             <div>
-              <label className="block text-xs font-semibold text-slate-800 mb-1.5">
+              <label htmlFor="stepup-recovery-code" className="block text-xs font-semibold text-slate-800 mb-1.5">
                 Single-Use Recovery Code
               </label>
               <input
+                id="stepup-recovery-code"
                 type="text"
                 autoFocus
                 required

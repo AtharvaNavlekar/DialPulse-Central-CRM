@@ -11,6 +11,16 @@ import {
   PrivacyPolicyDocument,
   CompliancePostureData,
   ComplianceGovernanceRecord,
+  BillingLedgerResponse,
+  BillingRecordItem,
+  SupportOverviewResponse,
+  SupportDiagnosticCheckResult,
+  SupportTicketItem,
+  FeatureFlagsResponse,
+  FeatureFlagItem,
+  InfrastructureSnapshotResponse,
+  InfrastructureServiceNode,
+  PlatformAnalyticsResponse,
 } from './types.ts';
 
 export class ApiClient {
@@ -21,7 +31,11 @@ export class ApiClient {
     this.onUnauthorizedSession = handler;
   }
 
-  private async request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
+  private async request<T>(
+    endpoint: string,
+    options: RequestInit = {},
+    config: { suppressUnauthorizedCallback?: boolean } = {}
+  ): Promise<T> {
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
       'X-Requested-With': 'XMLHttpRequest',
@@ -50,7 +64,7 @@ export class ApiClient {
           headers,
         });
       }
-      if (response.status === 401 && this.onUnauthorizedSession) {
+      if (response.status === 401 && !config.suppressUnauthorizedCallback && this.onUnauthorizedSession) {
         this.onUnauthorizedSession();
       }
     }
@@ -133,8 +147,11 @@ export class ApiClient {
             'X-Requested-With': 'XMLHttpRequest',
           },
         });
-        // 200: Successfully rotated; 409: Concurrently rotated within grace window
-        return response.ok || response.status === 409;
+        if (response.status === 409) {
+          await new Promise((resolve) => setTimeout(resolve, 80));
+          return true;
+        }
+        return response.ok;
       } catch {
         return false;
       } finally {
@@ -149,8 +166,8 @@ export class ApiClient {
     await this.request('/api/auth/logout', { method: 'POST' });
   }
 
-  async getCurrentUser(): Promise<PlatformUser> {
-    const res = await this.request<{ user: PlatformUser }>('/api/auth/me');
+  async getCurrentUser(config?: { suppressUnauthorizedCallback?: boolean }): Promise<PlatformUser> {
+    const res = await this.request<{ user: PlatformUser }>('/api/auth/me', {}, config);
     return res.user;
   }
 
@@ -340,6 +357,152 @@ export class ApiClient {
 
   async triggerSeed(): Promise<any> {
     return this.request('/api/platform/system/seed', { method: 'POST' });
+  }
+
+  // Billing & Plans
+  async getBillingLedger(params?: { search?: string; status?: string }): Promise<BillingLedgerResponse> {
+    const query = new URLSearchParams();
+    if (params?.search) query.set('search', params.search);
+    if (params?.status && params.status !== 'all') query.set('status', params.status);
+    const qs = query.toString() ? `?${query.toString()}` : '';
+    return this.request<BillingLedgerResponse>(`/api/platform/billing${qs}`);
+  }
+
+  async createBillingInvoice(payload: {
+    tenantId: string;
+    invoiceNumber?: string;
+    amountCents: number;
+    currency?: string;
+    status?: 'paid' | 'pending' | 'overdue';
+    periodStart: string;
+    periodEnd: string;
+  }): Promise<{ success: boolean; record: BillingRecordItem; message: string }> {
+    return this.request('/api/platform/billing', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async updateBillingStatus(
+    id: string,
+    status: 'paid' | 'pending' | 'overdue' | 'void'
+  ): Promise<{ success: boolean; record: BillingRecordItem; message: string }> {
+    return this.request(`/api/platform/billing/${encodeURIComponent(id)}/status`, {
+      method: 'PATCH',
+      body: JSON.stringify({ status }),
+    });
+  }
+
+  // Platform Support & Diagnostics
+  async getSupportOverview(params?: { search?: string; status?: string }): Promise<SupportOverviewResponse> {
+    const query = new URLSearchParams();
+    if (params?.search) query.set('search', params.search);
+    if (params?.status && params.status !== 'all') query.set('status', params.status);
+    const qs = query.toString() ? `?${query.toString()}` : '';
+    return this.request<SupportOverviewResponse>(`/api/platform/support${qs}`);
+  }
+
+  async runSupportDiagnostic(
+    tenantId: string
+  ): Promise<{ success: boolean; diagnostic: SupportDiagnosticCheckResult }> {
+    return this.request('/api/platform/support/diagnostics', {
+      method: 'POST',
+      body: JSON.stringify({ tenantId }),
+    });
+  }
+
+  async createSupportTicket(payload: {
+    tenantId: string;
+    tenantName?: string;
+    ticketReference: string;
+    subject: string;
+    category: SupportTicketItem['category'];
+    severity: SupportTicketItem['severity'];
+    diagnosticNotes?: string;
+  }): Promise<{ success: boolean; ticket: SupportTicketItem; message: string }> {
+    return this.request('/api/platform/support/tickets', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async updateSupportTicket(
+    id: string,
+    status: SupportTicketItem['status'],
+    diagnosticNotes?: string
+  ): Promise<{ success: boolean; ticket: SupportTicketItem }> {
+    return this.request(`/api/platform/support/tickets/${encodeURIComponent(id)}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ status, diagnosticNotes }),
+    });
+  }
+
+  // Feature Flags Management
+  async getFeatureFlags(params?: { search?: string; state?: string }): Promise<FeatureFlagsResponse> {
+    const query = new URLSearchParams();
+    if (params?.search) query.set('search', params.search);
+    if (params?.state && params.state !== 'all') query.set('state', params.state);
+    const qs = query.toString() ? `?${query.toString()}` : '';
+    return this.request<FeatureFlagsResponse>(`/api/platform/features${qs}`);
+  }
+
+  async createFeatureFlag(payload: {
+    key: string;
+    description: string;
+    isGloballyEnabled: boolean;
+    rolloutPercentage: number;
+    targetTenants?: string[];
+  }): Promise<{ success: boolean; flag: FeatureFlagItem; message: string }> {
+    return this.request('/api/platform/features', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async updateFeatureFlag(
+    id: string,
+    patch: {
+      isGloballyEnabled?: boolean;
+      rolloutPercentage?: number;
+      description?: string;
+      targetTenants?: string[];
+    }
+  ): Promise<{ success: boolean; flag: FeatureFlagItem; message: string }> {
+    return this.request(`/api/platform/features/${encodeURIComponent(id)}`, {
+      method: 'PATCH',
+      body: JSON.stringify(patch),
+    });
+  }
+
+  // Infrastructure & Operations
+  async getInfrastructureSnapshot(): Promise<InfrastructureSnapshotResponse> {
+    return this.request<InfrastructureSnapshotResponse>('/api/platform/infrastructure');
+  }
+
+  async runInfrastructureProbe(): Promise<{
+    success: boolean;
+    snapshot: InfrastructureSnapshotResponse;
+    message: string;
+  }> {
+    return this.request('/api/platform/infrastructure/probe', {
+      method: 'POST',
+      body: JSON.stringify({}),
+    });
+  }
+
+  async toggleInfrastructureService(
+    id: string,
+    action: 'drain' | 'restore'
+  ): Promise<{ success: boolean; service: InfrastructureServiceNode; message: string }> {
+    return this.request(`/api/platform/infrastructure/services/${encodeURIComponent(id)}/toggle`, {
+      method: 'POST',
+      body: JSON.stringify({ action }),
+    });
+  }
+
+  // Platform Analytics
+  async getPlatformAnalytics(window: '7d' | '30d' | '90d' = '30d'): Promise<PlatformAnalyticsResponse> {
+    return this.request<PlatformAnalyticsResponse>(`/api/platform/analytics?window=${encodeURIComponent(window)}`);
   }
 }
 

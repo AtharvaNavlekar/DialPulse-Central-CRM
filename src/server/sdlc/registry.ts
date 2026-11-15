@@ -83,18 +83,28 @@ export const PROJECT_SUBSYSTEM_STATUS: SubsystemStatus[] = [
   },
   {
     subsystem: 'Billing & Invoicing Mutations',
-    status: 'MISSING',
-    notes: 'Out of scope for current foundation phase. Not built in this change.',
+    status: 'PARTIAL',
+    notes: 'PostgreSQL billing_records & standalone ledger, invoice issuance, status transitions, RBAC, step-up MFA and audit logging active; external Razorpay/Stripe webhook settlement pending.',
+  },
+  {
+    subsystem: 'Platform Support & Diagnostic Center',
+    status: 'REAL',
+    notes: 'Escalation queue, live tenant readiness & SIP/seat probes, ticket workflow, and impersonation audit history operational.',
+  },
+  {
+    subsystem: 'Feature Flag Management',
+    status: 'REAL',
+    notes: 'PostgreSQL feature_flags & standalone store with global switches, cohort percentages, tenant allowlists, step-up MFA and audit logging.',
   },
   {
     subsystem: 'Infrastructure & Telephony Switches',
-    status: 'MISSING',
-    notes: 'Out of scope for current foundation phase. Not built in this change.',
+    status: 'PARTIAL',
+    notes: 'Live Node.js runtime telemetry, event-loop lag probes, PostgreSQL pool metrics, and step-up gated node drain/restore switches operational; external Kubernetes orchestration pending.',
   },
   {
     subsystem: 'Analytics & Reporting Pipelines',
-    status: 'MISSING',
-    notes: 'Out of scope for current foundation phase. Not built in this change.',
+    status: 'PARTIAL',
+    notes: 'Windowed tenant, seat capacity, billing collection, audit outcome, and security severity aggregations active; high-volume external CDR stream pending.',
   },
 ];
 

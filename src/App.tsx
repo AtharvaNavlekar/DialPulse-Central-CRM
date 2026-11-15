@@ -16,7 +16,7 @@ import {
 } from 'react-router-dom';
 import { RefreshCw, ShieldAlert, ArrowLeft } from 'lucide-react';
 import { AuthProvider, useAuth } from './app/AuthContext.tsx';
-import { PLATFORM_ROUTES, NavItemKey, sanitizeReturnPath } from './app/routes.ts';
+import { PLATFORM_ROUTES, sanitizeReturnPath } from './app/routes.ts';
 import { PLATFORM_PERMISSIONS, PlatformPermission } from './server/policies/permissions.ts';
 import { LoginPage } from './pages/LoginPage.tsx';
 import { PrivacyPolicyPage } from './pages/PrivacyPolicyPage.tsx';
@@ -27,7 +27,11 @@ import { TenantListView } from './features/tenants/TenantListView.tsx';
 import { SecurityView } from './features/security/SecurityView.tsx';
 import { AuditListView } from './features/audit/AuditListView.tsx';
 import { RbacMatrixView } from './features/rbac/RbacMatrixView.tsx';
-import { ModulePlaceholder } from './features/unimplemented/ModulePlaceholder.tsx';
+import { BillingView } from './features/billing/BillingView.tsx';
+import { SupportView } from './features/support/SupportView.tsx';
+import { FeatureFlagsView } from './features/features/FeatureFlagsView.tsx';
+import { InfrastructureView } from './features/infrastructure/InfrastructureView.tsx';
+import { AnalyticsView } from './features/analytics/AnalyticsView.tsx';
 import { Card } from './components/ui/Card.tsx';
 import { Button } from './components/ui/Button.tsx';
 
@@ -139,16 +143,6 @@ const OverviewRoute: React.FC = () => {
   );
 };
 
-const PlaceholderRoute: React.FC<{ moduleKey: NavItemKey }> = ({ moduleKey }) => {
-  const navigate = useNavigate();
-  return (
-    <ModulePlaceholder
-      moduleKey={moduleKey}
-      onBackToOverview={() => navigate(PLATFORM_ROUTES.OVERVIEW)}
-    />
-  );
-};
-
 export function AppRoutes() {
   return (
     <Routes>
@@ -208,7 +202,7 @@ export function AppRoutes() {
             path={PLATFORM_ROUTES.BILLING}
             element={
               <PermissionGuard permission={PLATFORM_PERMISSIONS.BILLING_READ}>
-                <PlaceholderRoute moduleKey="billing" />
+                <BillingView />
               </PermissionGuard>
             }
           />
@@ -217,7 +211,7 @@ export function AppRoutes() {
             path={PLATFORM_ROUTES.SUPPORT}
             element={
               <PermissionGuard permission={PLATFORM_PERMISSIONS.SUPPORT_READ}>
-                <PlaceholderRoute moduleKey="support" />
+                <SupportView />
               </PermissionGuard>
             }
           />
@@ -226,7 +220,7 @@ export function AppRoutes() {
             path={PLATFORM_ROUTES.CONFIGURATION}
             element={
               <PermissionGuard permission={PLATFORM_PERMISSIONS.FEATURES_READ}>
-                <PlaceholderRoute moduleKey="features" />
+                <FeatureFlagsView />
               </PermissionGuard>
             }
           />
@@ -235,7 +229,7 @@ export function AppRoutes() {
             path={PLATFORM_ROUTES.INFRASTRUCTURE}
             element={
               <PermissionGuard permission={PLATFORM_PERMISSIONS.INFRASTRUCTURE_READ}>
-                <PlaceholderRoute moduleKey="infrastructure" />
+                <InfrastructureView />
               </PermissionGuard>
             }
           />
@@ -244,7 +238,7 @@ export function AppRoutes() {
             path={PLATFORM_ROUTES.ANALYTICS}
             element={
               <PermissionGuard permission={PLATFORM_PERMISSIONS.ANALYTICS_READ}>
-                <PlaceholderRoute moduleKey="analytics" />
+                <AnalyticsView />
               </PermissionGuard>
             }
           />

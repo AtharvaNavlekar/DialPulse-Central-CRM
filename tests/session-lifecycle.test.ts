@@ -1636,8 +1636,10 @@ export async function runSessionLifecycleTests() {
         assert.strictEqual(accessCookie.attributes.httponly, true);
         assert.strictEqual(accessCookie.attributes.secure, true, 'HTTPS proxy access cookie must be Secure even in development');
         assert.strictEqual(String(accessCookie.attributes.samesite).toLowerCase(), 'none', 'HTTPS proxy access cookie must use SameSite=None for iframe persistence');
+        assert.strictEqual(accessCookie.attributes.partitioned, true, 'HTTPS proxy access cookie must include Partitioned (CHIPS) for Chrome iframe support');
         assert.strictEqual(refreshCookie.attributes.secure, true, 'HTTPS proxy refresh cookie must be Secure even in development');
         assert.strictEqual(String(refreshCookie.attributes.samesite).toLowerCase(), 'none', 'HTTPS proxy refresh cookie must use SameSite=None for iframe persistence');
+        assert.strictEqual(refreshCookie.attributes.partitioned, true, 'HTTPS proxy refresh cookie must include Partitioned (CHIPS) for Chrome iframe support');
 
         // 22b. Cookie round-trip to /api/platform/overview succeeds with issued access cookie
         const overviewRes = await makeRequest(server, '/api/platform/overview', 'GET', {
@@ -1647,7 +1649,7 @@ export async function runSessionLifecycleTests() {
         assert.strictEqual(overviewRes.status, 200, 'Issued login cookie must authenticate /api/platform/overview');
         assert(overviewRes.body.platformState, 'Overview payload must be returned');
 
-        // 22c. Refresh & logout under HTTPS proxy preserve matching Secure + SameSite=None attributes
+        // 22c. Refresh & logout under HTTPS proxy preserve matching Secure + SameSite=None + Partitioned attributes
         const refreshRes = await makeRequest(server, '/api/auth/refresh', 'POST', {
           host: 'ais-dev-preview.example.run.app',
           origin: proxyOrigin,
@@ -1657,6 +1659,7 @@ export async function runSessionLifecycleTests() {
         assert.strictEqual(refreshRes.status, 200, 'HTTPS proxy refresh must succeed');
         assert.strictEqual(refreshRes.cookies[COOKIE_NAMES.ACCESS_TOKEN].attributes.secure, true);
         assert.strictEqual(String(refreshRes.cookies[COOKIE_NAMES.ACCESS_TOKEN].attributes.samesite).toLowerCase(), 'none');
+        assert.strictEqual(refreshRes.cookies[COOKIE_NAMES.ACCESS_TOKEN].attributes.partitioned, true);
 
         const logoutRes = await makeRequest(server, '/api/auth/logout', 'POST', {
           host: 'ais-dev-preview.example.run.app',
@@ -1667,10 +1670,11 @@ export async function runSessionLifecycleTests() {
         assert.strictEqual(logoutRes.status, 200);
         assert.strictEqual(logoutRes.cookies[COOKIE_NAMES.ACCESS_TOKEN].attributes.secure, true, 'Clear cookie must match Secure attribute');
         assert.strictEqual(String(logoutRes.cookies[COOKIE_NAMES.ACCESS_TOKEN].attributes.samesite).toLowerCase(), 'none', 'Clear cookie must match SameSite=None attribute');
+        assert.strictEqual(logoutRes.cookies[COOKIE_NAMES.ACCESS_TOKEN].attributes.partitioned, true, 'Clear cookie must match Partitioned attribute');
       } finally {
         await new Promise<void>((resolve) => server.close(() => resolve()));
       }
-      console.log('  ✓ Criterion 22: HTTPS proxy / iframe cookies use Secure + SameSite=None and authenticate /api/platform/overview');
+      console.log('  ✓ Criterion 22: HTTPS proxy / iframe cookies use Secure + SameSite=None + Partitioned and authenticate /api/platform/overview');
     }
   } finally {
     // Restore environment

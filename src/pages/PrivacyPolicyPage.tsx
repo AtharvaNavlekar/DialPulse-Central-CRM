@@ -128,9 +128,13 @@ export const PrivacyPolicyPage: React.FC = () => {
         {/* Document Header */}
         <Card variant="elevated" rounded="3xl" className="p-6 sm:p-8 space-y-5">
           <div className="space-y-2">
-            <div className="inline-flex items-center gap-1.5 text-[11px] font-mono uppercase tracking-wider font-bold text-[#00695C]">
-              <Scale className="w-3.5 h-3.5" />
-              <span>IT Act 2000 · SPDI Rules 2011 · CERT-In 2022 Disclosure</span>
+            <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[11px] font-mono uppercase tracking-wider font-bold text-[#00695C]">
+              <Scale className="w-3.5 h-3.5 shrink-0" />
+              <span className="whitespace-nowrap">IT Act 2000</span>
+              <span aria-hidden="true">·</span>
+              <span className="whitespace-nowrap">SPDI Rules 2011</span>
+              <span aria-hidden="true">·</span>
+              <span className="whitespace-nowrap">CERT-In 2022 Disclosure</span>
             </div>
             <h1 className="text-xl sm:text-2xl font-display font-extrabold text-slate-900 tracking-tight">
               {policy.title}

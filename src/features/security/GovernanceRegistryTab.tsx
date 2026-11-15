@@ -346,7 +346,13 @@ export const GovernanceRegistryTab: React.FC<GovernanceRegistryTabProps> = ({
                   </div>
                   <p className="text-slate-700 text-[11px]">{rec.details.notes}</p>
                   <div className="text-[10px] font-mono text-slate-500 flex flex-wrap gap-2">
-                    <span>{String(rec.details.category || '').replace(/_/g, ' ')}</span>
+                    <span className="text-slate-700 font-semibold">
+                      {rec.details.category === 'it_act_training'
+                        ? 'IT Act Staff Training'
+                        : rec.details.category === 'vapt_assessment'
+                        ? 'VAPT Assessment'
+                        : 'Quarterly Review'}
+                    </span>
                     <span>·</span>
                     <span>{rec.details.subjectEmail}</span>
                     <span>·</span>

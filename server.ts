@@ -32,6 +32,11 @@ import auditRouter from './src/server/routes/audit.ts';
 import securityRouter from './src/server/routes/security.ts';
 import impersonationRouter from './src/server/routes/impersonation.ts';
 import systemRouter from './src/server/routes/system.ts';
+import billingRouter from './src/server/routes/billing.ts';
+import supportRouter from './src/server/routes/support.ts';
+import featuresRouter from './src/server/routes/features.ts';
+import infrastructureRouter from './src/server/routes/infrastructure.ts';
+import analyticsRouter from './src/server/routes/analytics.ts';
 
 // Centralized validation: will fail fast if required secrets or invalid configs are present
 const config = getValidatedConfig();
@@ -60,6 +65,11 @@ app.use('/api/platform/audit', auditRouter);
 app.use('/api/platform/security', securityRouter);
 app.use('/api/platform/impersonation', impersonationRouter);
 app.use('/api/platform/system', systemRouter);
+app.use('/api/platform/billing', billingRouter);
+app.use('/api/platform/support', supportRouter);
+app.use('/api/platform/features', featuresRouter);
+app.use('/api/platform/infrastructure', infrastructureRouter);
+app.use('/api/platform/analytics', analyticsRouter);
 
 // Standard 404 for unknown /api/* endpoints
 app.all('/api/*', (req, res) => {

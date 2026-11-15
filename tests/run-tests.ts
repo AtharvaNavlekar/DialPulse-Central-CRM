@@ -23,6 +23,8 @@ import { runSdlcTests } from './sdlc.test.ts';
 import { runTenantFilterTests } from './tenant-filter.test.ts';
 import { runDatabaseTlsTests } from './db-tls.test.ts';
 import { runSprint01Tests } from './sprint01.test.ts';
+import { runComplianceTests } from './compliance.test.ts';
+import { runPendingModulesTests } from './pending-modules.test.ts';
 
 async function main() {
   console.log('====================================================');
@@ -42,6 +44,8 @@ async function main() {
     await runTenantFilterTests();
     await runDatabaseTlsTests();
     await runSprint01Tests();
+    await runComplianceTests();
+    await runPendingModulesTests();
 
     const elapsed = Date.now() - startTime;
     console.log('\n====================================================');

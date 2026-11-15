@@ -24,10 +24,12 @@ export const AuthProvider: React.FC<{
   const [user, setUser] = useState<PlatformUser | null>(hasExplicitInitial ? initialUser : null);
   const [loading, setLoading] = useState(!hasExplicitInitial);
   const [error, setError] = useState<string | null>(null);
+  const authGenerationRef = React.useRef(0);
 
   useEffect(() => {
     if (hasExplicitInitial) return;
     api.setUnauthorizedHandler(() => {
+      authGenerationRef.current += 1;
       setUser(null);
     });
     return () => {
@@ -37,23 +39,17 @@ export const AuthProvider: React.FC<{
 
   useEffect(() => {
     if (hasExplicitInitial) return;
+    const bootGeneration = authGenerationRef.current;
     async function loadCurrentSession() {
       try {
-        const u = await api.getCurrentUser();
-        setUser(u);
-      } catch (err: any) {
-        // Attempt token refresh via HTTP-only cookie if initial check fails
-        try {
-          const refreshed = await api.refreshToken();
-          if (refreshed) {
-            const u = await api.getCurrentUser();
-            setUser(u);
-            return;
-          }
-        } catch {
-          // Session unauthenticated or refresh expired
+        const u = await api.getCurrentUser({ suppressUnauthorizedCallback: true });
+        if (authGenerationRef.current === bootGeneration) {
+          setUser(u);
         }
-        setUser(null);
+      } catch {
+        if (authGenerationRef.current === bootGeneration) {
+          setUser(null);
+        }
       } finally {
         setLoading(false);
       }
@@ -61,12 +57,30 @@ export const AuthProvider: React.FC<{
     loadCurrentSession();
   }, [hasExplicitInitial]);
 
+  const verifyCookieRoundTrip = async (): Promise<PlatformUser> => {
+    try {
+      return await api.getCurrentUser({ suppressUnauthorizedCallback: true });
+    } catch (err: any) {
+      if (err?.status === 401) {
+        const cookieErr = new Error(
+          'Your browser blocked authentication cookies in this embedded preview frame. Allow site cookies or open DialPulse in a dedicated browser tab.'
+        ) as any;
+        cookieErr.code = 'COOKIE_BLOCKED_IN_FRAME';
+        cookieErr.status = 401;
+        throw cookieErr;
+      }
+      throw err;
+    }
+  };
+
   const login = async (email: string, password: string): Promise<LoginResponse> => {
     setError(null);
     try {
       const res = await api.login(email, password);
       if ('user' in res) {
-        setUser(res.user);
+        const verifiedUser = await verifyCookieRoundTrip();
+        authGenerationRef.current += 1;
+        setUser(verifiedUser);
       }
       return res;
     } catch (err: any) {
@@ -78,8 +92,10 @@ export const AuthProvider: React.FC<{
   const verifyMfaChallenge = async (challengeToken: string, code: string) => {
     setError(null);
     try {
-      const res = await api.submitMfaChallenge(challengeToken, code);
-      setUser(res.user);
+      await api.submitMfaChallenge(challengeToken, code);
+      const verifiedUser = await verifyCookieRoundTrip();
+      authGenerationRef.current += 1;
+      setUser(verifiedUser);
     } catch (err: any) {
       setError(err.message || 'MFA verification failed');
       throw err;
@@ -90,7 +106,9 @@ export const AuthProvider: React.FC<{
     setError(null);
     try {
       const res = await api.submitMfaRecovery(challengeToken, recoveryCode);
-      setUser(res.user);
+      const verifiedUser = await verifyCookieRoundTrip();
+      authGenerationRef.current += 1;
+      setUser(verifiedUser);
       return res.remainingRecoveryCodes;
     } catch (err: any) {
       setError(err.message || 'Recovery code verification failed');
